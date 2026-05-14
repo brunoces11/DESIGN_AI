@@ -1,0 +1,30 @@
+{
+  "imageWidthPx": 1,
+  "imageHeightPx": 1,
+  "textElements": [
+    {
+      "content": "Hello",
+      "bboxPx": {
+        "x": 0,
+        "y": 0,
+        "width": 1,
+        "height": 1
+      },
+      "color": "#FFFFFF",
+      "fontWeight": 700,
+      "align": "center"
+    },
+    {
+      "content": "World",
+      "bboxPx": {
+        "x": 0,
+        "y": 0,
+        "width": 1,
+        "height": 1
+      },
+      "color": "#000000",
+      "fontWeight": 400,
+      "align": "left"
+    }
+  ]
+}

@@ -72,7 +72,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     // Stage 2: generate first iteration
-    const generated = await generateImageToImage({ baseImage: imageBuffer, prompt });
+    const generated = await generateImageToImage({ baseImage: imageBuffer, prompt, widthMm, heightMm });
     await localStorage.saveBytes(jobId, 'iterations/1.png', generated);
     updateJob(jobId, { current_iteration: 1 });
 

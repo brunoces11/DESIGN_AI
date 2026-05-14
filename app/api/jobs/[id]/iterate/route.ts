@@ -46,7 +46,7 @@ export async function POST(
     }
 
     const next = job.current_iteration + 1;
-    const generated = await generateImageToImage({ baseImage, prompt });
+    const generated = await generateImageToImage({ baseImage, prompt, widthMm: job.width_mm, heightMm: job.height_mm });
     await localStorage.saveBytes(id, `iterations/${next}.png`, generated);
     updateJob(id, { current_iteration: next });
 

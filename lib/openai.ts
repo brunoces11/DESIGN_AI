@@ -5,10 +5,13 @@
  * Each function makes exactly ONE API call and returns the raw result.
  * Retry logic lives in lib/openai/visionRetry.ts.
  *
+ * Prompts are loaded from lib/prompts.ts (editable via the Settings UI).
+ *
  * Requirements: 9.1–9.4
  */
 
 import OpenAI from 'openai';
+import { loadPrompts, interpolate } from './prompts';
 
 // ---------------------------------------------------------------------------
 // Singleton client
@@ -37,15 +40,25 @@ function getClient(): OpenAI {
 
 /**
  * Generates an image from an existing image + prompt using gpt-image-1.
- * Returns a PNG buffer.
+ * The prompt template is loaded from the prompts store and interpolated
+ * with the user's prompt and print dimensions.
  *
  * Requirements: 2.2, 3.1
  */
 export async function generateImageToImage(args: {
   baseImage: Buffer;
   prompt: string;
+  widthMm?: number;
+  heightMm?: number;
 }): Promise<Buffer> {
   const client = getClient();
+  const prompts = loadPrompts();
+
+  const finalPrompt = interpolate(prompts.imageGeneration, {
+    userPrompt: args.prompt,
+    widthMm: String(args.widthMm ?? ''),
+    heightMm: String(args.heightMm ?? ''),
+  });
 
   // Convert buffer to a File object for the API
   const imageFile = new File([args.baseImage], 'image.jpg', { type: 'image/jpeg' });
@@ -53,7 +66,7 @@ export async function generateImageToImage(args: {
   const response = await client.images.edit({
     model: 'gpt-image-1',
     image: imageFile,
-    prompt: args.prompt,
+    prompt: finalPrompt,
     n: 1,
     size: '1024x1024',
   });
@@ -63,12 +76,10 @@ export async function generateImageToImage(args: {
     throw new Error('generateImageToImage: no image data returned from API');
   }
 
-  // gpt-image-1 returns base64 by default
   if (imageData.b64_json) {
     return Buffer.from(imageData.b64_json, 'base64');
   }
 
-  // Fallback: URL response
   if (imageData.url) {
     const res = await fetch(imageData.url);
     const arrayBuffer = await res.arrayBuffer();
@@ -84,7 +95,7 @@ export async function generateImageToImage(args: {
 
 /**
  * Regenerates an image without any text using gpt-image-1.
- * Uses a rigid internal prompt that instructs text removal.
+ * Uses the removeText prompt template from the prompts store.
  *
  * Requirements: 6.1, 6.2
  */
@@ -93,19 +104,18 @@ export async function regenerateWithoutText(args: {
   originalPrompt: string;
 }): Promise<Buffer> {
   const client = getClient();
+  const prompts = loadPrompts();
 
-  const noTextPrompt =
-    `Remove all text, letters, numbers, words, and typography from this image completely. ` +
-    `Keep the visual scene, colors, composition, and background elements intact. ` +
-    `Do not use inpainting or masks — regenerate the image without any text elements. ` +
-    `Scene context: ${args.originalPrompt}`;
+  const finalPrompt = interpolate(prompts.removeText, {
+    originalPrompt: args.originalPrompt,
+  });
 
   const imageFile = new File([args.baseImage], 'image.png', { type: 'image/png' });
 
   const response = await client.images.edit({
     model: 'gpt-image-1',
     image: imageFile,
-    prompt: noTextPrompt,
+    prompt: finalPrompt,
     n: 1,
     size: '1024x1024',
   });
@@ -134,38 +144,19 @@ export async function regenerateWithoutText(args: {
 
 /**
  * Extracts text layout information from an image using gpt-4o Vision.
+ * Uses the visionLayout prompt template from the prompts store.
  * Returns the raw (unvalidated) JSON response.
  *
  * Requirements: 5.1, 5.2
  */
 export async function extractLayoutVision(args: { image: Buffer }): Promise<unknown> {
   const client = getClient();
+  const prompts = loadPrompts();
+
+  const systemPrompt = prompts.visionLayout;
 
   const base64Image = args.image.toString('base64');
   const dataUrl = `data:image/png;base64,${base64Image}`;
-
-  const systemPrompt = `You are a precise layout analysis assistant. 
-Analyze the provided image and extract all visible text elements with their exact positions and styling.
-Return ONLY a valid JSON object matching this exact schema — no markdown, no explanation:
-
-{
-  "imageWidthPx": <number — width of the image in pixels>,
-  "imageHeightPx": <number — height of the image in pixels>,
-  "textElements": [
-    {
-      "content": "<exact text content, preserve newlines as \\n>",
-      "bboxPx": {
-        "x": <number — left edge in pixels, >= 0>,
-        "y": <number — top edge in pixels, >= 0>,
-        "width": <number — width in pixels, > 0>,
-        "height": <number — height in pixels, > 0>
-      },
-      "color": "<CSS color string, e.g. '#FFFFFF' or 'white'>",
-      "fontWeight": <integer multiple of 100 between 100 and 900>,
-      "align": "<'left' | 'center' | 'right'>"
-    }
-  ]
-}`;
 
   const response = await client.chat.completions.create({
     model: 'gpt-4o',

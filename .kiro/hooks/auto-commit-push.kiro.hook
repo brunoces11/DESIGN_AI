@@ -1,0 +1,14 @@
+{
+  "enabled": true,
+  "name": "Auto Commit & Push",
+  "description": "After each agent task completes, automatically stages all changes, commits with a descriptive message, and pushes to origin.",
+  "version": "1",
+  "when": {
+    "type": "agentStop"
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "git add -A && git diff --cached --quiet || git commit -m \"chore: auto-commit after agent task\" && git push",
+    "timeout": 30
+  }
+}

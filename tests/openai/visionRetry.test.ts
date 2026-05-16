@@ -32,6 +32,7 @@ const VALID_VISION_RESPONSE = {
   textElements: [
     {
       content: 'Hello World',
+      label: 'titulo',
       bboxPx: { x: 10, y: 20, width: 200, height: 50 },
       color: '#FFFFFF',
       fontWeight: 700,
@@ -39,6 +40,7 @@ const VALID_VISION_RESPONSE = {
     },
     {
       content: 'Subtitle',
+      label: 'subtitulo',
       bboxPx: { x: 10, y: 80, width: 150, height: 30 },
       color: '#CCCCCC',
       fontWeight: 400,

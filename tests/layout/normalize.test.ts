@@ -38,6 +38,7 @@ describe('VisionResponseSchema', () => {
       textElements: [
         {
           content: 'Hello',
+          label: 'titulo',
           bboxPx: { x: 10, y: 20, width: 100, height: 50 },
           color: '#FFFFFF',
           fontWeight: 700,
@@ -73,6 +74,7 @@ describe('VisionResponseSchema', () => {
       textElements: [
         {
           content: 'Hello',
+          label: 'titulo',
           bboxPx: { x: -1, y: 0, width: 100, height: 50 },
           color: '#FFF',
           fontWeight: 400,
@@ -90,6 +92,7 @@ describe('VisionResponseSchema', () => {
       textElements: [
         {
           content: 'Hello',
+          label: 'titulo',
           bboxPx: { x: 0, y: -5, width: 100, height: 50 },
           color: '#FFF',
           fontWeight: 400,
@@ -107,6 +110,7 @@ describe('VisionResponseSchema', () => {
       textElements: [
         {
           content: 'Hello',
+          label: 'titulo',
           bboxPx: { x: 0, y: 0, width: 0, height: 50 },
           color: '#FFF',
           fontWeight: 400,
@@ -124,6 +128,7 @@ describe('VisionResponseSchema', () => {
       textElements: [
         {
           content: '',
+          label: 'titulo',
           bboxPx: { x: 0, y: 0, width: 100, height: 50 },
           color: '#FFF',
           fontWeight: 400,
@@ -141,6 +146,7 @@ describe('VisionResponseSchema', () => {
       textElements: [
         {
           content: 'Hello',
+          label: 'titulo',
           bboxPx: { x: 0, y: 0, width: 100, height: 50 },
           color: '#FFF',
           fontWeight: 50,
@@ -158,6 +164,7 @@ describe('VisionResponseSchema', () => {
       textElements: [
         {
           content: 'Hello',
+          label: 'titulo',
           bboxPx: { x: 0, y: 0, width: 100, height: 50 },
           color: '#FFF',
           fontWeight: 400,
@@ -181,6 +188,7 @@ describe('normalizeVisionResponse — escala', () => {
       textElements: [
         {
           content: 'Hello',
+          label: 'titulo',
           bboxPx: { x: 100, y: 50, width: 200, height: 100 },
           color: '#FFFFFF',
           fontWeight: 400,
@@ -247,6 +255,7 @@ describe('normalizeVisionResponse — bboxes na borda', () => {
       textElements: [
         {
           content: 'Edge',
+          label: 'titulo',
           bboxPx: { x: 0, y: 0, width: 100, height: 100 },
           color: '#000',
           fontWeight: 400,
@@ -278,6 +287,7 @@ describe('normalizeVisionResponse — bboxes na borda', () => {
       textElements: [
         {
           content: 'Overflow',
+          label: 'titulo',
           bboxPx: { x: 80, y: 80, width: 100, height: 100 }, // exceeds 100x100
           color: '#000',
           fontWeight: 400,
@@ -315,9 +325,9 @@ describe('normalizeVisionResponse — IDs e preservação', () => {
       imageWidthPx: 100,
       imageHeightPx: 100,
       textElements: [
-        { content: 'A', bboxPx: { x: 0, y: 0, width: 10, height: 10 }, color: '#000', fontWeight: 400, align: 'left' },
-        { content: 'B', bboxPx: { x: 0, y: 0, width: 10, height: 10 }, color: '#000', fontWeight: 400, align: 'left' },
-        { content: 'C', bboxPx: { x: 0, y: 0, width: 10, height: 10 }, color: '#000', fontWeight: 400, align: 'left' },
+        { content: 'A', label: 'titulo', bboxPx: { x: 0, y: 0, width: 10, height: 10 }, color: '#000', fontWeight: 400, align: 'left' },
+        { content: 'B', label: 'titulo', bboxPx: { x: 0, y: 0, width: 10, height: 10 }, color: '#000', fontWeight: 400, align: 'left' },
+        { content: 'C', label: 'titulo', bboxPx: { x: 0, y: 0, width: 10, height: 10 }, color: '#000', fontWeight: 400, align: 'left' },
       ],
     });
 
@@ -341,6 +351,7 @@ describe('normalizeVisionResponse — IDs e preservação', () => {
       imageHeightPx: 100,
       textElements: Array.from({ length: 7 }, (_, i) => ({
         content: `Text ${i}`,
+        label: 'titulo',
         bboxPx: { x: 0, y: 0, width: 10, height: 10 },
         color: '#000',
         fontWeight: 400 as const,
@@ -367,6 +378,7 @@ describe('normalizeVisionResponse — IDs e preservação', () => {
       textElements: [
         {
           content: 'Line 1\nLine 2\nLine 3',
+          label: 'titulo',
           bboxPx: { x: 0, y: 0, width: 50, height: 30 },
           color: '#000',
           fontWeight: 400,
@@ -394,6 +406,7 @@ describe('normalizeVisionResponse — IDs e preservação', () => {
       textElements: [
         {
           content: 'Hello',
+          label: 'titulo',
           bboxPx: { x: 0, y: 0, width: 50, height: 20 },
           color: '#000',
           fontWeight: 700,

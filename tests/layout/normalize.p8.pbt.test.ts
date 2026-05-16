@@ -49,6 +49,7 @@ const arbAlign = fc.constantFrom('left' as const, 'center' as const, 'right' as 
 const arbVisionTextElement = (imageWidthPx: number, imageHeightPx: number) =>
   fc.record({
     content: fc.string({ minLength: 1, maxLength: 100 }).filter((s) => s.trim().length > 0),
+    label: fc.string({ minLength: 0, maxLength: 32 }),
     bboxPx: fc.record({
       x: fc.integer({ min: 0, max: imageWidthPx * 2 }),
       y: fc.integer({ min: 0, max: imageHeightPx * 2 }),
@@ -90,6 +91,7 @@ const arbVisionResponse: fc.Arbitrary<{
     return fc
       .tuple(...(elementArbs as [fc.Arbitrary<{
         content: string;
+        label: string;
         bboxPx: { x: number; y: number; width: number; height: number };
         color: string;
         fontWeight: number;
@@ -103,6 +105,7 @@ const arbVisionResponse: fc.Arbitrary<{
           imageHeightPx,
           textElements: elemArray.map((e) => ({
             content: e.content,
+            label: e.label,
             bboxPx: {
               x: Math.max(0, e.bboxPx.x),
               y: Math.max(0, e.bboxPx.y),

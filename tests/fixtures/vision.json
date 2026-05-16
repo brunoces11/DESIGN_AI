@@ -4,6 +4,7 @@
   "textElements": [
     {
       "content": "Hello",
+      "label": "titulo",
       "bboxPx": {
         "x": 0,
         "y": 0,
@@ -16,6 +17,7 @@
     },
     {
       "content": "World",
+      "label": "subtitulo",
       "bboxPx": {
         "x": 0,
         "y": 0,

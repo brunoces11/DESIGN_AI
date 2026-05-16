@@ -20,9 +20,21 @@ export type TextElement = {
 
 export type JobStatus =
   | 'created'
+  | 'analyzing_reference'
+  | 'text_review'
   | 'iterating'
   | 'processing_step4'
   | 'preview_ready'
   | 'rendering_pdf'
   | 'pdf_ready'
   | 'error';
+
+export type EditableTextItem = {
+  id: string;
+  label: string;
+  value: string;
+};
+
+export type TextBrief = {
+  textItems: EditableTextItem[];
+};

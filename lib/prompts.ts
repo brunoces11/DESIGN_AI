@@ -11,6 +11,8 @@
 import fs from 'fs';
 import path from 'path';
 
+import type { EditableTextItem } from './layout/types';
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -53,7 +55,9 @@ export const DEFAULT_PROMPTS: PromptsConfig = {
    */
   imageGeneration: `{{userPrompt}}
 
-Physical dimensions: {{widthMm}}mm × {{heightMm}}mm. Generate a high-quality image suitable for large-format printing at these dimensions.`,
+Physical dimensions: {{widthMm}}mm × {{heightMm}}mm. Generate a high-quality image suitable for large-format printing at these dimensions.
+
+{{textInstructions}}`,
 
   /**
    * Stage 4B — Regenerate without text (gpt-image-1)
@@ -65,7 +69,7 @@ Physical dimensions: {{widthMm}}mm × {{heightMm}}mm. Generate a high-quality im
    * Stage 4A — Vision layout extraction (gpt-4o)
    * No dynamic variables — the image is sent as a separate attachment.
    */
-  visionLayout: `You are a precise layout analysis assistant. 
+  visionLayout: `You are a precise layout analysis assistant.
 Analyze the provided image and extract all visible text elements with their exact positions and styling.
 Return ONLY a valid JSON object matching this exact schema — no markdown, no explanation:
 
@@ -75,6 +79,7 @@ Return ONLY a valid JSON object matching this exact schema — no markdown, no e
   "textElements": [
     {
       "content": "<exact text content, preserve newlines as \\n>",
+      "label": "<short hierarchy hint, e.g. 'titulo', 'subtitulo', 'preco', 'descricao', 'rodape'; any string is acceptable>",
       "bboxPx": {
         "x": <number — left edge in pixels, >= 0>,
         "y": <number — top edge in pixels, >= 0>,
@@ -86,7 +91,9 @@ Return ONLY a valid JSON object matching this exact schema — no markdown, no e
       "align": "<'left' | 'center' | 'right'>"
     }
   ]
-}`,
+}
+
+Return elements ordered top-to-bottom (primary) and left-to-right (secondary when y-overlap exceeds 50% of the larger element height).`,
 };
 
 // ---------------------------------------------------------------------------
@@ -114,6 +121,12 @@ export const PROMPT_DEFINITIONS: PromptDefinition[] = [
         name: 'heightMm',
         description: 'Physical height of the print piece in millimetres',
         example: '500',
+      },
+      {
+        name: 'textInstructions',
+        description:
+          'Bloco de instruções textuais geradas a partir do TextBrief; lista cada item ou instrui a ausência total de texto',
+        example: 'Include EXACTLY these texts...\n- titulo: "PROMOÇÃO"\n- preco: "R$ 19,90"',
       },
     ],
     template: DEFAULT_PROMPTS.imageGeneration,
@@ -187,4 +200,35 @@ export function savePrompts(config: PromptsConfig): void {
  */
 export function interpolate(template: string, vars: Record<string, string>): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_, key: string) => vars[key] ?? `{{${key}}}`);
+}
+
+// ---------------------------------------------------------------------------
+// Text instructions formatter (design § d.4)
+// ---------------------------------------------------------------------------
+
+/**
+ * Pure, deterministic, server-side. Maps an effective brief
+ * (already filtered to non-empty values by the caller) into a
+ * single block of instructions for gpt-image-1.
+ *
+ * Empty input → "no text" instruction.
+ * Non-empty   → enumerated list with mandatory header.
+ *
+ * Determinism: order of items is preserved as given; no Date/random/locale.
+ */
+export function formatTextInstructions(
+  textItems: EditableTextItem[],
+): string {
+  if (textItems.length === 0) {
+    return 'Generate a 100% text-free image: no letters, numbers, words, watermarks, or typographic elements anywhere.';
+  }
+
+  const lines = textItems
+    .map((t) => `- ${t.label}: "${t.value}"`)
+    .join('\n');
+
+  return [
+    'Include EXACTLY these texts in the image, with no spelling, number or punctuation changes. Do not invent extra texts. Do not omit any. Use the labels as visual hierarchy hints but do not render the labels themselves.',
+    lines,
+  ].join('\n');
 }

@@ -21,14 +21,14 @@ All tests use Vitest + fast-check (already in `package.json`). PBT tests use ≥
 
 _Rollout step 1 — design § a, c — Req 10, Req 13.1, Req 13.5, Req 12.7_
 
-- [ ] 1.1 Extend `JobStatus` union and add `EditableTextItem` / `TextBrief` types
+- [x] 1.1 Extend `JobStatus` union and add `EditableTextItem` / `TextBrief` types
   - File: `c:\Users\Bruno\Desktop\VIBE\DESIGN_AI\lib\layout\types.ts`
   - Add `'analyzing_reference'` and `'text_review'` to `JobStatus`.
   - Add `export type EditableTextItem = { id: string; label: string; value: string }`.
   - Add `export type TextBrief = { textItems: EditableTextItem[] }`.
   - _Refs: design § a; Req 10.4, 12.7, 13.1_
 
-- [ ] 1.2 Add Zod schemas for `EditableTextItem` and `TextBrief`
+- [x] 1.2 Add Zod schemas for `EditableTextItem` and `TextBrief`
   - File: `c:\Users\Bruno\Desktop\VIBE\DESIGN_AI\lib\layout\types.ts` (or co-located in `lib/layout/normalize.ts` if preferred — match existing repo convention by exporting from `normalize.ts`)
   - `EditableTextItemSchema = z.object({ id: z.string().uuid(), label: z.string().max(64), value: z.string().max(500) })`
   - `TextBriefSchema = z.object({ textItems: z.array(EditableTextItemSchema) })` — no max length.
@@ -40,7 +40,7 @@ _Rollout step 1 — design § a, c — Req 10, Req 13.1, Req 13.5, Req 12.7_
   - **Validates: Req 12.4, 12.7**
   - Generators: `arbTextItems` with `maxLength: 200`.
 
-- [ ] 1.4 Update SQL schema, `JobRow`, `insertJob`, `updateJob`
+- [x] 1.4 Update SQL schema, `JobRow`, `insertJob`, `updateJob`
   - File: `c:\Users\Bruno\Desktop\VIBE\DESIGN_AI\lib\db.ts`
   - Extend `CREATE TABLE` `CHECK (status IN (...))` to include `'analyzing_reference'` and `'text_review'`.
   - Add columns `text_brief_json TEXT`, `reference_analysis_json TEXT` (both NULLABLE).
@@ -49,7 +49,7 @@ _Rollout step 1 — design § a, c — Req 10, Req 13.1, Req 13.5, Req 12.7_
   - Extend `updateJob`'s patchable union to include `text_brief_json` and `reference_analysis_json`.
   - _Refs: design § c.1–c.4; Req 10.1, 10.2, 10.3, 10.5, 10.6, 10.7, 13.5_
 
-- [ ] 1.5 Implement `getTextBrief` and `setTextBrief` wrappers (DB-first, FS best-effort)
+- [x] 1.5 Implement `getTextBrief` and `setTextBrief` wrappers (DB-first, FS best-effort)
   - File: `c:\Users\Bruno\Desktop\VIBE\DESIGN_AI\lib\db.ts`
   - `setTextBrief(id, brief)` writes DB column then calls `localStorage.saveJson(id, 'text-brief.json', brief)`; logs and swallows file-write errors after a successful DB write.
   - _Refs: design § c.5; Req 11.2, 11.5; P-PERSISTENCE-PARITY-1_
@@ -71,7 +71,7 @@ _Rollout step 1 — design § a, c — Req 10, Req 13.1, Req 13.5, Req 12.7_
   - **Validates: Req 13.1, 13.5; P-IDEMPOTENCY-1**
   - Calls `transitionStatus` `N ≥ 2` times in succession for `analyzing_reference → text_review` and `text_review → iterating`; assert `true` exactly once, `false` thereafter.
 
-- [ ] 1.9 **Verification step (migration hot-point)** — delete the dev SQLite database so `initSchema` recreates it with the new CHECK and columns, then run the schema tests.
+- [x] 1.9 **Verification step (migration hot-point)** — delete the dev SQLite database so `initSchema` recreates it with the new CHECK and columns, then run the schema tests.
   - Command: delete `c:\Users\Bruno\Desktop\VIBE\DESIGN_AI\storage\jobs.db` and any `storage\jobs.db-*` sidecar files (`-shm`, `-wal`).
   - Then run: `npm test -- tests/db/`
   - Expected: `tests/db/initSchema.test.ts`, `tests/db/textBrief.roundtrip.pbt.test.ts`, `tests/db/transitionStatus.newEdges.pbt.test.ts` all pass.
@@ -83,7 +83,7 @@ _Rollout step 1 — design § a, c — Req 10, Req 13.1, Req 13.5, Req 12.7_
 
 _Rollout step 2 — design § b, d — Req 2, Req 8.3–8.8, Req 9_
 
-- [ ] 2.1 Extend `VisionTextElementSchema` with required `label: z.string()`
+- [x] 2.1 Extend `VisionTextElementSchema` with required `label: z.string()`
   - File: `c:\Users\Bruno\Desktop\VIBE\DESIGN_AI\lib\layout\normalize.ts`
   - No enum constraint on `label`. Keep `normalizeVisionResponse` exported and unchanged in behaviour.
   - _Refs: design § b.1; Req 2.2, 8.10, 9.2_
@@ -94,7 +94,7 @@ _Rollout step 2 — design § b, d — Req 2, Req 8.3–8.8, Req 9_
   - **Validates: Req 2.2; P-SCHEMA-1**
   - Generator: `fc.string()` for `label`, otherwise valid element fields.
 
-- [ ] 2.3 Implement pure `sortByReadingOrder`
+- [x] 2.3 Implement pure `sortByReadingOrder`
   - File: `c:\Users\Bruno\Desktop\VIBE\DESIGN_AI\lib\layout\normalize.ts`
   - Total, deterministic comparator using y-overlap > 50% of larger height as the "same row" rule; x as tiebreaker on the same row, y otherwise.
   - _Refs: design § b.2; Req 2.4, 2.5_
@@ -106,19 +106,19 @@ _Rollout step 2 — design § b, d — Req 2, Req 8.3–8.8, Req 9_
   - Generators: `arbVisionTextElement`, arrays of length 0–30. Asserts (i) permutation, (ii) pairwise predicate, (iii) idempotence.
   - _Pure-function PBT companion to 2.3._
 
-- [ ] 2.5 Implement pure `mergeBriefWithVisionLayout`
+- [x] 2.5 Implement pure `mergeBriefWithVisionLayout`
   - File: `c:\Users\Bruno\Desktop\VIBE\DESIGN_AI\lib\layout\normalize.ts`
   - Filter empty values, sort vision by reading order, match by index, keep extra brief items with default positioning, drop excess vision elements, set `id = brief.id`, `content = brief.value`.
   - _Refs: design § b.3; Req 8.3, 8.4, 8.5, 8.6, 8.7, 8.8_
 
-- [ ] 2.6 PBT: `mergeBriefWithVisionLayout` structural correctness (Property 3, P-BRIEF-2)
+- [~] 2.6 PBT: `mergeBriefWithVisionLayout` structural correctness (Property 3, P-BRIEF-2)
   - File: `c:\Users\Bruno\Desktop\VIBE\DESIGN_AI\tests\layout\mergeBrief.structural.pbt.test.ts`
   - **Property 3: mergeBriefWithVisionLayout structural correctness**
   - **Validates: Req 8.3, 8.4, 8.5, 8.7, 8.8**
   - Generators: `arbTextBrief`, `arbVisionResponse`, `arbCanvasMm`, `arbImageDims`.
   - _Pure-function PBT companion to 2.5._
 
-- [ ] 2.7 PBT: `mergeBriefWithVisionLayout` length arithmetic (Property 4, P-MATCH-1)
+- [~] 2.7 PBT: `mergeBriefWithVisionLayout` length arithmetic (Property 4, P-MATCH-1)
   - File: `c:\Users\Bruno\Desktop\VIBE\DESIGN_AI\tests\layout\mergeBrief.length.pbt.test.ts`
   - **Property 4: merge length arithmetic**
   - **Validates: Req 8.5, 8.6**
@@ -129,29 +129,29 @@ _Rollout step 2 — design § b, d — Req 2, Req 8.3–8.8, Req 9_
   - **Property 5: Effective brief filter is a value-trim subsequence**
   - **Validates: Req 5.10, 5.17, 12.5, 12.6**
 
-- [ ] 2.9 Add fast-check generators fixture (shared by P1–P10 PBTs)
+- [x] 2.9 Add fast-check generators fixture (shared by P1–P10 PBTs)
   - File: `c:\Users\Bruno\Desktop\VIBE\DESIGN_AI\tests\fixtures\arbs.ts`
   - Export `arbUuidV4`, `arbLabel`, `arbValue`, `arbEditableTextItem`, `arbTextBrief`, `arbBboxPx`, `arbAlign`, `arbVisionTextElement`, `arbVisionResponse`, `arbCanvasMm`, `arbImageDims`.
   - _Refs: design § Testing Strategy "PBT generators (specifications)"_
 
-- [ ] 2.10 Update `DEFAULT_PROMPTS.imageGeneration` with `{{textInstructions}}`
+- [x] 2.10 Update `DEFAULT_PROMPTS.imageGeneration` with `{{textInstructions}}`
   - File: `c:\Users\Bruno\Desktop\VIBE\DESIGN_AI\lib\prompts.ts`
   - _Refs: design § d.1; Req 9.1_
 
-- [ ] 2.11 Update `DEFAULT_PROMPTS.visionLayout` with `label` field and reading-order instruction
+- [x] 2.11 Update `DEFAULT_PROMPTS.visionLayout` with `label` field and reading-order instruction
   - File: `c:\Users\Bruno\Desktop\VIBE\DESIGN_AI\lib\prompts.ts`
   - _Refs: design § d.2; Req 9.2, 9.3_
 
-- [ ] 2.12 Update `PROMPT_DEFINITIONS` to expose `textInstructions` variable for `imageGeneration`
+- [x] 2.12 Update `PROMPT_DEFINITIONS` to expose `textInstructions` variable for `imageGeneration`
   - File: `c:\Users\Bruno\Desktop\VIBE\DESIGN_AI\lib\prompts.ts`
   - _Refs: design § d.3; Req 9.9_
 
-- [ ] 2.13 Implement pure `formatTextInstructions`
+- [x] 2.13 Implement pure `formatTextInstructions`
   - File: `c:\Users\Bruno\Desktop\VIBE\DESIGN_AI\lib\prompts.ts`
   - Empty input → fixed "no text" instruction string. Non-empty → mandatory header + `\n` + `- {label}: "{value}"` lines joined by `\n`.
   - _Refs: design § d.4; Req 9.4, 9.5, 9.6, 9.7_
 
-- [ ] 2.14 PBT: `formatTextInstructions` determinism (Property 7, P-DETERMINISM-1)
+- [x] 2.14 PBT: `formatTextInstructions` determinism (Property 7, P-DETERMINISM-1)
   - File: `c:\Users\Bruno\Desktop\VIBE\DESIGN_AI\tests\prompts\formatTextInstructions.pbt.test.ts`
   - **Property 7: formatTextInstructions is deterministic**
   - **Validates: Req 9.4, 9.5, 9.6, 9.7**
@@ -162,7 +162,7 @@ _Rollout step 2 — design § b, d — Req 2, Req 8.3–8.8, Req 9_
   - Asserts `imageGeneration` contains `{{textInstructions}}`; `visionLayout` contains `"label"` and the reading-order sentence; `removeText` is unchanged.
   - _Refs: design § Testing Strategy; Req 9.1, 9.2, 9.3, 9.5, 9.6, 9.8_
 
-- [ ] 2.16 **Verification step** — `npm test -- tests/layout/ tests/prompts/`
+- [~] 2.16 **Verification step** — `npm test -- tests/layout/ tests/prompts/`
   - Expected: P1, P3, P4, P5, P7, P8, P9 PBTs pass; existing P8 normalize test (`tests/layout/normalize.p8.pbt.test.ts`) still passes since `normalizeVisionResponse` is unchanged.
   - _Refs: design § Rollout Plan step 2 hot point_
 
@@ -172,7 +172,7 @@ _Rollout step 2 — design § b, d — Req 2, Req 8.3–8.8, Req 9_
 
 _Rollout step 3 — design § m — Req 5.10, Req 6.4, Req 9_
 
-- [ ] 3.1 Extend `generateImageToImage` to accept `textItems` and inject `formatTextInstructions(textItems)` into `{{textInstructions}}`
+- [~] 3.1 Extend `generateImageToImage` to accept `textItems` and inject `formatTextInstructions(textItems)` into `{{textInstructions}}`
   - File: `c:\Users\Bruno\Desktop\VIBE\DESIGN_AI\lib\openai.ts`
   - Optional `textItems?: EditableTextItem[]`. When undefined, pass `[]` to `formatTextInstructions` so the "no-text" block is injected.
   - Keep `regenerateWithoutText` and `extractLayoutVision` untouched (Req 9.8, 15.8).
@@ -183,7 +183,7 @@ _Rollout step 3 — design § m — Req 5.10, Req 6.4, Req 9_
   - Mock the OpenAI client; assert the final prompt string contains the expected `formatTextInstructions(...)` block for both empty and non-empty `textItems`.
   - _Refs: design § m; Req 5.10, 9.5, 9.6_
 
-- [ ] 3.3 **Verification step** — manual smoke: trigger `npm test -- tests/openai/` and confirm wrappers pass; spot-check that an iterate flow with empty `textItems` still produces the "no text" instruction in the assembled prompt (verifiable via the mock-assertion test above).
+- [~] 3.3 **Verification step** — manual smoke: trigger `npm test -- tests/openai/` and confirm wrappers pass; spot-check that an iterate flow with empty `textItems` still produces the "no text" instruction in the assembled prompt (verifiable via the mock-assertion test above).
   - _Refs: design § Rollout Plan step 3 hot point_
 
 ---
@@ -192,17 +192,17 @@ _Rollout step 3 — design § m — Req 5.10, Req 6.4, Req 9_
 
 _Rollout step 4 — design § f — Req 1, Req 2, Req 14_
 
-- [ ] 4.1 Implement `POST /api/jobs/analyze-reference`
+- [~] 4.1 Implement `POST /api/jobs/analyze-reference`
   - File: `c:\Users\Bruno\Desktop\VIBE\DESIGN_AI\app\api\jobs\analyze-reference\route.ts` (new file)
   - Validate multipart fields (`image`, `widthMm`, `heightMm`, optional `prompt`); enforce 10 MB cap; insert job at `analyzing_reference`; save `original.jpg`; call `extractLayoutVisionWithRetry(buf, 1)`; on success persist `reference-analysis.json` + `text-brief.json` + DB columns and transition to `text_review`; on Vision throw, degrade gracefully with `{ warning: 'vision_unavailable', textItems: [] }`.
   - _Refs: design § f; Req 1.1–1.14, 2.1, 2.4, 14.1, 14.2, 14.4_
 
-- [ ] 4.2 Extract a pure `buildBriefFromVision(vision)` helper for testability
+- [~] 4.2 Extract a pure `buildBriefFromVision(vision)` helper for testability
   - File: `c:\Users\Bruno\Desktop\VIBE\DESIGN_AI\app\api\jobs\analyze-reference\route.ts` (or a co-located `lib/openai/analyzeReference.ts` module if preferred for unit-testability)
   - Pure function: takes a validated `VisionResponse`, returns `TextBrief` with one `EditableTextItem` per element in reading order, fresh UUIDs.
   - _Refs: design § f; design § Testing Strategy P2 generator note; Req 1.8, 2.6_
 
-- [ ] 4.3 PBT: TextBrief build is a sorted bijection (Property 2)
+- [~] 4.3 PBT: TextBrief build is a sorted bijection (Property 2)
   - File: `c:\Users\Bruno\Desktop\VIBE\DESIGN_AI\tests\openai\analyzeReference.buildBrief.pbt.test.ts`
   - **Property 2: TextBrief build from Vision is a sorted bijection**
   - **Validates: Req 1.8, 2.6**
@@ -220,7 +220,7 @@ _Rollout step 4 — design § f — Req 1, Req 2, Req 14_
     - Storage I/O throws after job insert: 500 `Internal server error`, job in `error`.
   - _Refs: design § Testing Strategy "Unit and integration tests"; Req 1.1–1.14, 14.1–14.4_
 
-- [ ] 4.5 **Verification step** — `npm test -- tests/integration/analyzeReference.test.ts tests/openai/analyzeReference.buildBrief.pbt.test.ts`
+- [~] 4.5 **Verification step** — `npm test -- tests/integration/analyzeReference.test.ts tests/openai/analyzeReference.buildBrief.pbt.test.ts`
   - Optional manual: `curl -F image=@tests/fixtures/original.jpg -F widthMm=300 -F heightMm=500 http://localhost:3000/api/jobs/analyze-reference` and confirm 200 with `textItems`.
   - _Refs: design § Rollout Plan step 4 hot point_
 
@@ -230,7 +230,7 @@ _Rollout step 4 — design § f — Req 1, Req 2, Req 14_
 
 _Rollout step 5 — design § g, h — Req 5, Req 6, Req 12_
 
-- [ ] 5.1 Update `POST /api/jobs` to handle continuation vs fresh creation
+- [~] 5.1 Update `POST /api/jobs` to handle continuation vs fresh creation
   - File: `c:\Users\Bruno\Desktop\VIBE\DESIGN_AI\app\api\jobs\route.ts`
   - Define the 1×1 transparent PNG constant (`TRANSPARENT_PNG_1X1`).
   - Branch A: `jobId` provided AND DB status `text_review` → `setTextBrief`, optional overwrite of `original.jpg`, `transitionStatus(['text_review'], 'iterating')`, generate, save `iterations/1.png`. 409 otherwise.
@@ -238,7 +238,7 @@ _Rollout step 5 — design § g, h — Req 5, Req 6, Req 12_
   - Filter `effectiveBrief` server-side before passing to `generateImageToImage`. Persisted `text_brief_json` must contain the unfiltered list.
   - _Refs: design § g; Req 5.1–5.17, 12.1, 12.2, 12.4, 12.5, 12.6_
 
-- [ ] 5.2 Update `POST /api/jobs/:id/iterate` to accept and persist `textItems`
+- [~] 5.2 Update `POST /api/jobs/:id/iterate` to accept and persist `textItems`
   - File: `c:\Users\Bruno\Desktop\VIBE\DESIGN_AI\app\api\jobs\[id]\iterate\route.ts`
   - Validate `textItems` JSON via the same Zod schema; enforce `prompt` non-empty; assert job status `iterating` (409 otherwise); call `setTextBrief(id, { textItems })` BEFORE generation; pass `effective` items into `generateImageToImage`; save `iterations/{n+1}.png`; bump `current_iteration`. Endpoint MUST NOT call any Vision Stage 0.
   - _Refs: design § h; Req 6.1–6.7_
@@ -253,7 +253,7 @@ _Rollout step 5 — design § g, h — Req 5, Req 6, Req 12_
   - Mock `generateImageToImage`. Assert `text_brief_json` is updated BEFORE the OpenAI call; iteration count bumps; 409 when status is not `iterating`; 400 when `textItems` malformed.
   - _Refs: Req 6.1–6.7_
 
-- [ ] 5.5 **Verification step** — `npm test -- tests/integration/jobsCreate.test.ts tests/integration/jobsIterate.test.ts`
+- [~] 5.5 **Verification step** — `npm test -- tests/integration/jobsCreate.test.ts tests/integration/jobsIterate.test.ts`
   - _Refs: design § Rollout Plan step 5 hot point_
 
 ---
@@ -262,7 +262,7 @@ _Rollout step 5 — design § g, h — Req 5, Req 6, Req 12_
 
 _Rollout step 6 — design § i — Req 8_
 
-- [ ] 6.1 Replace `normalizeVisionResponse` with `mergeBriefWithVisionLayout` in `runStage4`
+- [~] 6.1 Replace `normalizeVisionResponse` with `mergeBriefWithVisionLayout` in `runStage4`
   - File: `c:\Users\Bruno\Desktop\VIBE\DESIGN_AI\app\api\jobs\[id]\approve\route.ts`
   - Read brief via `getTextBrief(id)`; default to `{ textItems: [] }` when null. Pass `imageWidthPx`, `imageHeightPx`, `canvasWidthMm`, `canvasHeightMm`, `backgroundDataUrl`. Persist `layout.json` with `background.dataUrl: '__deferred__'` exactly as today.
   - Keep parallel `extractLayoutVisionWithRetry` + `regenerateWithoutText` (Req 8.2). Do not invoke `normalizeVisionResponse` from this route after the swap (Req 8.10).
@@ -273,7 +273,7 @@ _Rollout step 6 — design § i — Req 8_
   - Mock vision + clean regen. Seed a job in `iterating` with a brief whose values are obviously different from the vision `content`s. After `POST /approve`, read `layout.json` and assert every `textElements[i].content` equals a `briefItem.value` (never the vision `content`); assert `textElements[i].id === briefItem.id`. Also test brief-longer-than-vision (extras kept) and vision-longer-than-brief (extras dropped).
   - _Refs: design § i; Req 8.3–8.8; P-BRIEF-2_
 
-- [ ] 6.3 **Verification step** — `npm test -- tests/integration/jobsApprove.test.ts`
+- [~] 6.3 **Verification step** — `npm test -- tests/integration/jobsApprove.test.ts`
   - _Refs: design § Rollout Plan step 6 hot point_
 
 ---
@@ -282,44 +282,44 @@ _Rollout step 6 — design § i — Req 8_
 
 _Rollout step 7 — design § j, l — Req 3, Req 4, Req 7, Req 9.9, Req 12.3_
 
-- [ ] 7.1 Refactor `AppState` and add shared form state for text brief flow
+- [~] 7.1 Refactor `AppState` and add shared form state for text brief flow
   - File: `c:\Users\Bruno\Desktop\VIBE\DESIGN_AI\app\page.tsx`
   - Replace `idle` with `text_setup`. Add `text_review` variant carrying `jobId`, `widthMm`, `heightMm`, optional `warning`. Hoist `imageFile`, `widthMm`, `heightMm`, `prompt`, `textItems` to top-level component state.
   - _Refs: design § j.1; Req 3.1, 3.7, 7.1_
 
-- [ ] 7.2 Implement `handleAnalyzeReference`
+- [~] 7.2 Implement `handleAnalyzeReference`
   - File: `c:\Users\Bruno\Desktop\VIBE\DESIGN_AI\app\page.tsx`
   - POSTs `multipart/form-data` to `/api/jobs/analyze-reference` with image + dims + optional prompt; populates `textItems` and switches to `text_review` on 200; surfaces `vision_unavailable` warning non-blockingly; disables both buttons while in flight.
   - _Refs: design § j.2; Req 3.4, 3.5, 3.6, 3.7, 3.8_
 
-- [ ] 7.3 Implement `handleSubmitInitial` (branches on `jobId`)
+- [~] 7.3 Implement `handleSubmitInitial` (branches on `jobId`)
   - File: `c:\Users\Bruno\Desktop\VIBE\DESIGN_AI\app\page.tsx`
   - POSTs `multipart/form-data` to `/api/jobs` with `widthMm`, `heightMm`, `prompt`, `textItems`, optional `image` and (when continuation) `jobId`. Transitions to `iterating` on success.
   - Client-side validation must mirror Req 12.3 (block when no image and no non-empty item).
   - _Refs: design § j.3; Req 3.11, 4.9, 5.1, 12.3_
 
-- [ ] 7.4 Implement `handleIterate` to include `textItems`
+- [~] 7.4 Implement `handleIterate` to include `textItems`
   - File: `c:\Users\Bruno\Desktop\VIBE\DESIGN_AI\app\page.tsx`
   - Sends current `textItems` (JSON-serialised) on every refine request.
   - _Refs: design § j.4; Req 7.2_
 
-- [ ] 7.5 Implement `renderTextBriefEditor`
+- [~] 7.5 Implement `renderTextBriefEditor`
   - File: `c:\Users\Bruno\Desktop\VIBE\DESIGN_AI\app\page.tsx`
   - Per-row label/value inputs, "Remover", "+ Adicionar texto"; yellow "este item será ignorado" badge when `value.trim() === ''`. No drag-and-drop, no max-count cap.
   - Used by both `text_review` and `iterating` screens.
   - _Refs: design § j.5; Req 4.1–4.12, 7.1, 7.3, 7.4, 15.1_
 
-- [ ] 7.6 Implement disabled-button rules and inline hint message
+- [~] 7.6 Implement disabled-button rules and inline hint message
   - File: `c:\Users\Bruno\Desktop\VIBE\DESIGN_AI\app\page.tsx`
   - "Analisar imagem" enabled only in `text_setup` with image and valid dims; "Gerar arte" enabled per Req 3.3, 4.10, 4.11. Inline message: "Adicione ao menos um texto ou envie uma imagem de referência" when applicable.
   - _Refs: design § j.6; Req 3.3, 3.4, 4.10, 4.11, 12.3_
 
-- [ ] 7.7 Reset analysis on reference-image change
+- [~] 7.7 Reset analysis on reference-image change
   - File: `c:\Users\Bruno\Desktop\VIBE\DESIGN_AI\app\page.tsx`
   - When the user picks a different file while in `text_review`, clear `textItems` and `jobId` and return to `text_setup`.
   - _Refs: design § j.7; Req 3.9_
 
-- [ ] 7.8 `SettingsModal` exposes `textInstructions` variable indirectly via `PROMPT_DEFINITIONS`
+- [~] 7.8 `SettingsModal` exposes `textInstructions` variable indirectly via `PROMPT_DEFINITIONS`
   - File: `c:\Users\Bruno\Desktop\VIBE\DESIGN_AI\app\components\SettingsModal.tsx` (no structural change; verify the variables list now renders the new entry from § d.3)
   - _Refs: design § l; Req 9.9_
 
@@ -333,7 +333,7 @@ _Rollout step 7 — design § j, l — Req 3, Req 4, Req 7, Req 9.9, Req 12.3_
   - Asserts add/edit/remove, empty-value warning badge, no max-count, no analyze button in `text_review`/`iterating`.
   - _Refs: Req 4.1–4.12, 7.1, 7.3, 7.4_
 
-- [ ] 7.11 **Verification step** — `npm test -- tests/integration/uiTextSetup.test.tsx tests/integration/uiBriefEditor.test.tsx`. Visually confirm the Settings UI now lists `textInstructions` under the `imageGeneration` card.
+- [~] 7.11 **Verification step** — `npm test -- tests/integration/uiTextSetup.test.tsx tests/integration/uiBriefEditor.test.tsx`. Visually confirm the Settings UI now lists `textInstructions` under the `imageGeneration` card.
   - _Refs: design § Rollout Plan step 7 hot point_
 
 ---
@@ -342,17 +342,17 @@ _Rollout step 7 — design § j, l — Req 3, Req 4, Req 7, Req 9.9, Req 12.3_
 
 _Rollout step 8 — design § Rollout Plan step 8 — Req 1, Req 5, Req 6, Req 8, Req 11, Req 14_
 
-- [ ] 8.1 Extend the existing e2e test with a Path A scenario (with reference image)
+- [~] 8.1 Extend the existing e2e test with a Path A scenario (with reference image)
   - File: `c:\Users\Bruno\Desktop\VIBE\DESIGN_AI\tests\integration\e2e.test.ts`
   - Mocks `extractLayoutVisionWithRetry`, `generateImageToImage`, `regenerateWithoutText`. Flow: `analyze-reference` → edit `textItems` (mutate one value to a known sentinel) → `POST /api/jobs` (continuation) → `POST /iterate` once → `POST /approve` → `POST /render-pdf`. Assert the persisted `layout.json` `textElements[*].content` set equals the post-edit brief's non-empty values (P-BRIEF-2).
   - _Refs: design § Rollout Plan step 8 (Path A); Req 1, 5, 6, 8, 11_
 
-- [ ] 8.2 Add a Path B scenario (no reference image)
+- [~] 8.2 Add a Path B scenario (no reference image)
   - File: `c:\Users\Bruno\Desktop\VIBE\DESIGN_AI\tests\integration\e2e.test.ts`
   - Flow: `POST /api/jobs` with no `jobId` and no image but ≥1 non-empty textItem → assert `original.jpg` is NOT written; assert generation was invoked with the 1×1 transparent PNG fallback (mock spy on `generateImageToImage`); then `iterate` → `approve` → `render-pdf` succeed. Assert `text_brief_json` round-trips through `text-brief.json` (P-PERSISTENCE-PARITY-1).
   - _Refs: design § Rollout Plan step 8 (Path B); Req 5.5, 5.13, 5.9, 11.2, 11.5, 12.2_
 
-- [ ] 8.3 **Verification step (final)** — `npm test`
+- [~] 8.3 **Verification step (final)** — `npm test`
   - All suites green, including existing tests untouched (`tests/layout/normalize.p8.pbt.test.ts`, `tests/layout/render.*.pbt.test.ts`, `tests/pdf/render.test.ts`, etc.).
   - _Refs: design § Rollout Plan step 8 hot point_
 
@@ -362,7 +362,7 @@ _Rollout step 8 — design § Rollout Plan step 8 — Req 1, Req 5, Req 6, Req 8
 
 _Maps every functional requirement (Req 1–Req 14) to the tests that cover it, and asserts the e2e smoke from rollout step 8._
 
-- [ ] 9.1 Confirm requirements-to-tests coverage matrix
+- [~] 9.1 Confirm requirements-to-tests coverage matrix
   - Walk this matrix and confirm each row's tests are present and passing:
 
   | Req | Test file(s) |
@@ -382,15 +382,15 @@ _Maps every functional requirement (Req 1–Req 14) to the tests that cover it, 
   | Req 13 (state machine) | `tests/db/transitionStatus.newEdges.pbt.test.ts` (P10); `tests/db/transition.p3.pbt.test.ts` (existing — must still pass) |
   | Req 14 (Stage 0 error handling) | `tests/integration/analyzeReference.test.ts` (Vision-throw + non-Vision-throw cases) |
 
-- [ ] 9.2 Confirm Path A e2e smoke (rollout step 8)
+- [~] 9.2 Confirm Path A e2e smoke (rollout step 8)
   - Test: `tests/integration/e2e.test.ts` — Path A scenario from task 8.1.
   - Assert: `final.pdf` is produced; `layout.json.textElements[*].content` set equals the user-edited brief's non-empty `value`s; no Vision `content` field leaked into `LayoutInput` (P-BRIEF-2).
 
-- [ ] 9.3 Confirm Path B e2e smoke (rollout step 8)
+- [~] 9.3 Confirm Path B e2e smoke (rollout step 8)
   - Test: `tests/integration/e2e.test.ts` — Path B scenario from task 8.2.
   - Assert: no `original.jpg` is written; `generateImageToImage` was called with the 1×1 transparent PNG fallback; the rest of the pipeline (iterate → approve → render-pdf) completes; `text-brief.json` matches `text_brief_json` (P-PERSISTENCE-PARITY-1).
 
-- [ ] 9.4 **Final verification step** — `npm test`
+- [~] 9.4 **Final verification step** — `npm test`
   - All suites green. Re-run `npm test -- tests/db/` after the migration verification step (1.9) is confirmed.
 
 ---

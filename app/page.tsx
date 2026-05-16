@@ -70,10 +70,9 @@ const S: Record<string, React.CSSProperties> = {
     fontWeight: 900,
     color: '#111',
     margin: 0,
-    letterSpacing: '0.08em',
+    letterSpacing: '0.06em',
     textTransform: 'uppercase' as const,
-    fontStretch: 'condensed' as const,
-    fontFamily: '"Arial Narrow", "Impact", "Oswald", system-ui, sans-serif',
+    fontFamily: '"Roboto Condensed", "Arial Narrow", "Impact", system-ui, sans-serif',
   },
   gearBtn: {
     background: 'none',

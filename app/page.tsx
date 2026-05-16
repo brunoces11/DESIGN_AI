@@ -181,14 +181,13 @@ const S: Record<string, React.CSSProperties> = {
   spinnerDot: { fontSize: 32, marginBottom: 12 },
   previewContainer: {
     width: '100%',
-    height: '60vh',
     overflow: 'hidden',
     position: 'relative' as const,
     background: '#e5e7eb',
     borderRadius: 10,
     marginBottom: 16,
   },
-  image: { width: '100%', borderRadius: 10, marginBottom: 16, display: 'block' },
+  image: { width: '100%', borderRadius: 10, marginBottom: 16, display: 'block', height: 'auto' },
   iterMeta: { color: '#6b7280', fontSize: 13, marginBottom: 12 },
 };
 
@@ -668,8 +667,16 @@ export default function Home() {
         <h2 style={S.title}>Refinar Arte</h2>
         <p style={S.iterMeta}>Iteração {state.currentIteration}</p>
         {renderError()}
-        <img src={`/api/jobs/${state.jobId}/iterations/${state.currentIteration}`}
-          alt={`Iteração ${state.currentIteration}`} style={S.image} />
+        <img
+          src={`/api/jobs/${state.jobId}/iterations/${state.currentIteration}`}
+          alt={`Iteração ${state.currentIteration}`}
+          style={{
+            ...S.image,
+            aspectRatio: `${state.widthMm} / ${state.heightMm}`,
+            objectFit: 'contain',
+            background: '#e5e7eb',
+          }}
+        />
         {renderTextBriefEditor()}
         <form onSubmit={(e) => { void handleIterate(e); }}>
           <div style={S.fieldGroup}>
@@ -712,7 +719,14 @@ export default function Home() {
         <div style={S.container}>
           <h2 style={S.title}>Preview</h2>
           {renderError()}
-          <div ref={previewContainerRef} style={S.previewContainer}>
+          <div
+            ref={previewContainerRef}
+            style={{
+              ...S.previewContainer,
+              aspectRatio: `${state.widthMm} / ${state.heightMm}`,
+              maxHeight: '70vh',
+            }}
+          >
             <div style={{ transformOrigin: 'top left', transform: `scale(${previewScale})`, width: iframeW, height: iframeH }}>
               <iframe src={`/api/jobs/${state.jobId}/preview-html`}
                 width={iframeW} height={iframeH}

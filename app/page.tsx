@@ -66,10 +66,14 @@ const S: Record<string, React.CSSProperties> = {
     padding: '12px 16px',
   },
   topBarTitle: {
-    fontSize: 16,
-    fontWeight: 700,
+    fontSize: 15,
+    fontWeight: 900,
     color: '#111',
     margin: 0,
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase' as const,
+    fontStretch: 'condensed' as const,
+    fontFamily: '"Arial Narrow", "Impact", "Oswald", system-ui, sans-serif',
   },
   gearBtn: {
     background: 'none',
@@ -217,7 +221,16 @@ function TopBar({
 }) {
   return (
     <div style={S.topBar}>
-      <h1 style={S.topBarTitle}>🎨 AI Print Art</h1>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <img
+          src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9ImN1cnJlbnRDb2xvciIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIGNsYXNzPSJsdWNpZGUgbHVjaWRlLXdhbmQtc3BhcmtsZXMtaWNvbiBsdWNpZGUtd2FuZC1zcGFya2xlcyI+PHBhdGggZD0ibTIxLjY0IDMuNjQtMS4yOC0xLjI4YTEuMjEgMS4yMSAwIDAgMC0xLjcyIDBMMi4zNiAxOC42NGExLjIxIDEuMjEgMCAwIDAgMCAxLjcybDEuMjggMS4yOGExLjIgMS4yIDAgMCAwIDEuNzIgMEwyMS42NCA1LjM2YTEuMiAxLjIgMCAwIDAgMC0xLjcyIi8+PHBhdGggZD0ibTE0IDcgMyAzIi8+PHBhdGggZD0iTTUgNnY0Ii8+PHBhdGggZD0iTTE5IDE0djQiLz48cGF0aCBkPSJNMTAgMnYyIi8+PHBhdGggZD0iTTcgOEgzIi8+PHBhdGggZD0iTTIxIDE2aC00Ii8+PHBhdGggZD0iTTExIDNIOSIvPjwvc3ZnPg=="
+          alt="logo"
+          width={22}
+          height={22}
+          style={{ display: 'block', flexShrink: 0 }}
+        />
+        <h1 style={S.topBarTitle}>AI PRINT DESIGN</h1>
+      </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <select
           value={imageModel}
@@ -261,7 +274,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
-  const [imageModel, setImageModel] = useState<ImageModel>('gpt-image-1');
+  const [imageModel, setImageModel] = useState<ImageModel>('gpt-image-2');
 
   // Shared form state (Task 7.1 — hoisted to top-level)
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -409,6 +422,8 @@ export default function Home() {
       const res = await fetch('/api/jobs', { method: 'POST', body: fd });
       const data = (await res.json()) as { jobId?: string; iteration?: number; error?: string };
       if (!res.ok || !data.jobId) { setError(data.error ?? 'Failed to create job'); return; }
+      // Copy the setup prompt into iteratePrompt so it's visible on the iterating screen
+      setIteratePrompt(prompt);
       setState({ step: 'iterating', jobId: data.jobId, currentIteration: data.iteration!, widthMm: wMm, heightMm: hMm });
     } catch (err) { setError(String(err)); }
     finally { setLoading(false); }

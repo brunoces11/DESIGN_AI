@@ -63,6 +63,14 @@ export async function generateImageToImage(args: {
     textInstructions: formatTextInstructions(args.textItems ?? []),
   });
 
+  // Pick the closest supported aspect ratio based on physical dimensions.
+  // gpt-image-1 supports: '1024x1024' (square), '1536x1024' (landscape), '1024x1536' (portrait).
+  const w = args.widthMm ?? 1;
+  const h = args.heightMm ?? 1;
+  const ratio = w / h;
+  const size: '1024x1024' | '1536x1024' | '1024x1536' =
+    ratio > 1.2 ? '1536x1024' : ratio < 0.833 ? '1024x1536' : '1024x1024';
+
   // Convert buffer to a File object for the API
   const imageFile = new File([args.baseImage], 'image.jpg', { type: 'image/jpeg' });
 
@@ -71,7 +79,7 @@ export async function generateImageToImage(args: {
     image: imageFile,
     prompt: finalPrompt,
     n: 1,
-    size: '1024x1024',
+    size,
   });
 
   const imageData = response.data?.[0];

@@ -99,7 +99,7 @@ _Rollout step 2 — design § b, d — Req 2, Req 8.3–8.8, Req 9_
   - Total, deterministic comparator using y-overlap > 50% of larger height as the "same row" rule; x as tiebreaker on the same row, y otherwise.
   - _Refs: design § b.2; Req 2.4, 2.5_
 
-- [ ] 2.4 PBT: `sortByReadingOrder` is a valid reading-order permutation (Property 1, P-ORDER-1)
+- [x] 2.4 PBT: `sortByReadingOrder` is a valid reading-order permutation (Property 1, P-ORDER-1)
   - File: `c:\Users\Bruno\Desktop\VIBE\DESIGN_AI\tests\layout\normalize.sortReadingOrder.pbt.test.ts`
   - **Property 1: sortByReadingOrder produces a valid reading-order permutation**
   - **Validates: Req 2.4, 2.5**

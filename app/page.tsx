@@ -463,7 +463,10 @@ export default function Home() {
     if (state.step !== 'iterating') return;
     setLoading(true); setError(null);
     try {
-      const res = await fetch(`/api/jobs/${state.jobId}/approve`, { method: 'POST' });
+      const res = await fetch(`/api/jobs/${state.jobId}/approve`, {
+        method: 'POST',
+        headers: { 'x-image-model': imageModel },
+      });
       const data = (await res.json()) as { status?: string; error?: string };
       if (!res.ok && res.status !== 202) { setError(data.error ?? 'Approval failed'); return; }
       setState((prev) => prev.step !== 'iterating' ? prev : {

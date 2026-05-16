@@ -128,7 +128,8 @@ export async function generateImageToImage(args: {
 // ---------------------------------------------------------------------------
 
 /**
- * Regenerates an image without any text using gpt-image-1.
+ * Regenerates an image without any text using gpt-image-1 or gpt-image-2.
+ * Sends the approved image as the base so the model can preserve layout exactly.
  * Uses the removeText prompt template from the prompts store.
  *
  * Requirements: 6.1, 6.2
@@ -136,23 +137,49 @@ export async function generateImageToImage(args: {
 export async function regenerateWithoutText(args: {
   baseImage: Buffer;
   originalPrompt: string;
+  widthMm?: number;
+  heightMm?: number;
+  imageModel?: ImageModel;
 }): Promise<Buffer> {
   const client = getClient();
   const prompts = loadPrompts();
+  const model: ImageModel = args.imageModel ?? 'gpt-image-1';
 
   const finalPrompt = interpolate(prompts.removeText, {
     originalPrompt: args.originalPrompt,
   });
 
-  const imageFile = new File([args.baseImage], 'image.png', { type: 'image/png' });
+  // Always send the approved image as the base so the model can see
+  // exactly what to preserve. Use PNG to avoid JPEG compression artifacts.
+  const imageFile = new File([args.baseImage], 'approved.png', { type: 'image/png' });
 
-  const response = await client.images.edit({
-    model: 'gpt-image-1',
-    image: imageFile,
-    prompt: finalPrompt,
-    n: 1,
-    size: '1024x1024',
-  });
+  let response: Awaited<ReturnType<typeof client.images.edit>>;
+
+  if (model === 'gpt-image-2') {
+    response = await client.images.edit({
+      model: 'gpt-image-2',
+      image: imageFile,
+      prompt: finalPrompt,
+      n: 1,
+      size: 'auto',
+      quality: 'high',
+    } as Parameters<typeof client.images.edit>[0]);
+  } else {
+    // gpt-image-1: match the same aspect ratio used during generation
+    const w = args.widthMm ?? 1;
+    const h = args.heightMm ?? 1;
+    const ratio = w / h;
+    const size: '1024x1024' | '1536x1024' | '1024x1536' =
+      ratio > 1.2 ? '1536x1024' : ratio < 0.833 ? '1024x1536' : '1024x1024';
+
+    response = await client.images.edit({
+      model: 'gpt-image-1',
+      image: imageFile,
+      prompt: finalPrompt,
+      n: 1,
+      size,
+    });
+  }
 
   const imageData = response.data?.[0];
   if (!imageData) {

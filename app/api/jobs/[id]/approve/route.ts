@@ -13,10 +13,15 @@ import { extractLayoutVisionWithRetry } from '@/lib/openai/visionRetry';
 import { mergeBriefWithVisionLayout, type VisionResponse } from '@/lib/layout/normalize';
 
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: { id: string } },
 ): Promise<NextResponse> {
   const { id } = params;
+
+  // Read the image model preference from the request header (optional, defaults to gpt-image-1)
+  const imageModelHeader = req.headers.get('x-image-model');
+  const imageModel: 'gpt-image-1' | 'gpt-image-2' =
+    imageModelHeader === 'gpt-image-2' ? 'gpt-image-2' : 'gpt-image-1';
 
   const job = getJob(id);
   if (!job) {
@@ -41,7 +46,7 @@ export async function POST(
   }
 
   // Fire-and-forget Stage 4 — respond 202 immediately
-  void runStage4(id, job).catch((err: unknown) => {
+  void runStage4(id, job, imageModel).catch((err: unknown) => {
     try {
       updateJob(id, { error_message: String(err) });
       transitionStatus(id, ['processing_step4'], 'error');
@@ -54,15 +59,23 @@ export async function POST(
   return NextResponse.json({ status: 'processing_step4' }, { status: 202 });
 }
 
-async function runStage4(id: string, job: JobRow): Promise<void> {
+async function runStage4(id: string, job: JobRow, imageModel: 'gpt-image-1' | 'gpt-image-2'): Promise<void> {
   // Copy approved iteration
   const approved = await localStorage.readBytes(id, `iterations/${job.current_iteration}.png`);
   await localStorage.saveBytes(id, 'approved.png', approved);
 
   // Parallel: 4A (Vision) + 4B (clean regen)
+  // Pass the approved image as base, the model, and dimensions so the
+  // clean regen preserves layout, proportions, and negative space exactly.
   const [rawVision, cleanPng] = await Promise.all([
     extractLayoutVisionWithRetry(approved, 1),
-    regenerateWithoutText({ baseImage: approved, originalPrompt: job.initial_prompt }),
+    regenerateWithoutText({
+      baseImage: approved,
+      originalPrompt: job.initial_prompt,
+      widthMm: job.width_mm,
+      heightMm: job.height_mm,
+      imageModel,
+    }),
   ]);
 
   await localStorage.saveJson(id, 'vision.json', rawVision);

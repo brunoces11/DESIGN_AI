@@ -60,10 +60,24 @@ Physical dimensions: {{widthMm}}mm × {{heightMm}}mm. Generate a high-quality im
 {{textInstructions}}`,
 
   /**
-   * Stage 4B — Regenerate without text (gpt-image-1)
+   * Stage 4B — Regenerate without text (gpt-image-1 or gpt-image-2)
+   * The approved image is sent as the base. The goal is pixel-perfect
+   * preservation of everything except the text elements.
    * {{originalPrompt}} — the initial prompt from Stage 1
    */
-  removeText: `Remove all text, letters, numbers, words, and typography from this image completely. Keep the visual scene, colors, composition, and background elements intact. Do not use inpainting or masks — regenerate the image without any text elements. Scene context: {{originalPrompt}}`,
+  removeText: `You are given an image. Your task is to reproduce this image IDENTICALLY, with ONE single change: remove all text, letters, numbers, words, and typographic elements.
+
+CRITICAL RULES — follow every one without exception:
+1. Preserve the EXACT same composition, layout, and spatial arrangement of all visual elements.
+2. Preserve the EXACT same colors, color palette, gradients, and tones.
+3. Preserve the EXACT same proportions and aspect ratio of the image.
+4. Preserve ALL empty spaces, white areas, negative space, and blank regions exactly as they appear — do NOT fill them in.
+5. Preserve ALL background textures, patterns, shapes, and decorative elements.
+6. The ONLY change allowed is erasing text/typography. Replace text areas with the background that would logically be behind them (inpaint with surrounding context).
+7. Do NOT recompose, crop, zoom, or alter the framing in any way.
+8. Do NOT add any new visual elements.
+
+Scene context for background reconstruction: {{originalPrompt}}`,
 
   /**
    * Stage 4A — Vision layout extraction (gpt-4o)

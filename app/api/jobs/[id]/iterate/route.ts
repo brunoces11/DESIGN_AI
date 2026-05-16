@@ -1,14 +1,28 @@
 /**
  * POST /api/jobs/:id/iterate — Stage 3
  *
- * Accepts multipart/form-data: prompt (required), image (optional).
- * Requirements: 3.1–3.9, 14.1, 14.2
+ * Accepts multipart/form-data: prompt (required), textItems (required), image (optional).
+ * Requirements: 3.1–3.9, 6.1–6.7, 14.1, 14.2
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getJob, updateJob, transitionStatus } from '@/lib/db';
+import { z } from 'zod';
+import { getJob, updateJob, transitionStatus, setTextBrief } from '@/lib/db';
 import { localStorage } from '@/lib/storage';
 import { generateImageToImage } from '@/lib/openai';
+import type { EditableTextItem } from '@/lib/layout/types';
+
+// ---------------------------------------------------------------------------
+// Validation schema (Req 6.1, 6.2, 12.7)
+// ---------------------------------------------------------------------------
+
+const EditableTextItemSchema = z.object({
+  id: z.string().uuid(),
+  label: z.string().max(64),
+  value: z.string().max(500),
+});
+
+const TextItemsSchema = z.array(EditableTextItemSchema);
 
 export async function POST(
   req: NextRequest,
@@ -30,11 +44,35 @@ export async function POST(
 
   try {
     const formData = await req.formData();
-    const prompt = formData.get('prompt');
 
+    // Validate prompt (Req 3.1)
+    const prompt = formData.get('prompt');
     if (!prompt || typeof prompt !== 'string' || prompt.trim().length === 0) {
       return NextResponse.json({ error: 'prompt is required and must not be empty' }, { status: 400 });
     }
+
+    // Parse and validate textItems (Req 6.1, 6.2)
+    const textItemsRaw = formData.get('textItems');
+    if (!textItemsRaw || typeof textItemsRaw !== 'string') {
+      return NextResponse.json({ error: 'textItems is required' }, { status: 400 });
+    }
+
+    let parsedItems: EditableTextItem[];
+    try {
+      const parsed = TextItemsSchema.safeParse(JSON.parse(textItemsRaw));
+      if (!parsed.success) {
+        return NextResponse.json(
+          { error: 'Invalid textItems', details: parsed.error.flatten() },
+          { status: 400 },
+        );
+      }
+      parsedItems = parsed.data;
+    } catch {
+      return NextResponse.json({ error: 'textItems must be valid JSON' }, { status: 400 });
+    }
+
+    // Persist brief BEFORE generation (Req 6.3)
+    await setTextBrief(id, { textItems: parsedItems });
 
     // Determine base image: uploaded file or last iteration
     let baseImage: Buffer;
@@ -45,8 +83,18 @@ export async function POST(
       baseImage = await localStorage.readBytes(id, `iterations/${job.current_iteration}.png`);
     }
 
+    // Compute effective brief (filter empty values) and generate (Req 6.4, 5.10)
+    const effective = parsedItems.filter((t) => t.value.trim().length > 0);
+
     const next = job.current_iteration + 1;
-    const generated = await generateImageToImage({ baseImage, prompt, widthMm: job.width_mm, heightMm: job.height_mm });
+    // Req 6.5: NO Vision Stage 0 call here — only generateImageToImage
+    const generated = await generateImageToImage({
+      baseImage,
+      prompt,
+      widthMm: job.width_mm,
+      heightMm: job.height_mm,
+      textItems: effective,
+    });
     await localStorage.saveBytes(id, `iterations/${next}.png`, generated);
     updateJob(id, { current_iteration: next });
 

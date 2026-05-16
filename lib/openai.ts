@@ -11,7 +11,8 @@
  */
 
 import OpenAI from 'openai';
-import { loadPrompts, interpolate } from './prompts';
+import { loadPrompts, interpolate, formatTextInstructions } from './prompts';
+import type { EditableTextItem } from './layout/types';
 
 // ---------------------------------------------------------------------------
 // Singleton client
@@ -50,6 +51,7 @@ export async function generateImageToImage(args: {
   prompt: string;
   widthMm?: number;
   heightMm?: number;
+  textItems?: EditableTextItem[];
 }): Promise<Buffer> {
   const client = getClient();
   const prompts = loadPrompts();
@@ -58,6 +60,7 @@ export async function generateImageToImage(args: {
     userPrompt: args.prompt,
     widthMm: String(args.widthMm ?? ''),
     heightMm: String(args.heightMm ?? ''),
+    textInstructions: formatTextInstructions(args.textItems ?? []),
   });
 
   // Convert buffer to a File object for the API

@@ -6,11 +6,11 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getJob, updateJob, transitionStatus, type JobRow } from '@/lib/db';
+import { getJob, updateJob, transitionStatus, getTextBrief, type JobRow } from '@/lib/db';
 import { localStorage } from '@/lib/storage';
 import { regenerateWithoutText } from '@/lib/openai';
 import { extractLayoutVisionWithRetry } from '@/lib/openai/visionRetry';
-import { normalizeVisionResponse, type VisionResponse } from '@/lib/layout/normalize';
+import { mergeBriefWithVisionLayout, type VisionResponse } from '@/lib/layout/normalize';
 
 export async function POST(
   _req: NextRequest,
@@ -70,11 +70,13 @@ async function runStage4(id: string, job: JobRow): Promise<void> {
 
   const cleanDataUrl = `data:image/png;base64,${cleanPng.toString('base64')}`;
 
-  const visionResponse = rawVision as VisionResponse;
-  const layoutInput = normalizeVisionResponse({
-    raw: visionResponse,
-    imageWidthPx: visionResponse.imageWidthPx,
-    imageHeightPx: visionResponse.imageHeightPx,
+  const rawVisionTyped = rawVision as VisionResponse;
+  const brief = getTextBrief(id) ?? { textItems: [] };
+  const layoutInput = mergeBriefWithVisionLayout({
+    brief,
+    visionResponse: rawVisionTyped,
+    imageWidthPx: rawVisionTyped.imageWidthPx,
+    imageHeightPx: rawVisionTyped.imageHeightPx,
     canvasWidthMm: job.width_mm,
     canvasHeightMm: job.height_mm,
     backgroundDataUrl: cleanDataUrl,

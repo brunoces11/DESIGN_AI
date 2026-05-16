@@ -1,12 +1,12 @@
 /**
- * Integration E2E test (Task 23)
+ * Integration E2E test (Tasks 8.1, 8.2)
  *
  * Tests the full pipeline by calling the route handlers directly (in-process),
  * mocking ONLY lib/openai.ts. Uses real Playwright for PDF generation.
  *
  * Full flow: POST /api/jobs → iterate → approve → poll → preview-html → render-pdf → pdf
  *
- * Requirements: 1.3, 2.5, 3.8, 4.6, 5.1, 6.1, 7.9, 9.5, 10.7, 11.13, 13.2, 16.5 (P5)
+ * Requirements: 1, 5, 6, 8, 11, 14
  */
 
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
@@ -63,11 +63,11 @@ afterAll(async () => {
 // We test the core pipeline functions directly rather than via HTTP
 // to avoid the complexity of spinning up a Next.js server in test mode.
 
-import { insertJob, getJob, transitionStatus, updateJob } from '@/lib/db';
+import { insertJob, getJob, transitionStatus, updateJob, getTextBrief, setTextBrief } from '@/lib/db';
 import { localStorage } from '@/lib/storage';
 import { generateImageToImage, regenerateWithoutText, extractLayoutVision } from '@/lib/openai';
 import { extractLayoutVisionWithRetry } from '@/lib/openai/visionRetry';
-import { normalizeVisionResponse, VisionResponseSchema } from '@/lib/layout/normalize';
+import { mergeBriefWithVisionLayout, VisionResponseSchema } from '@/lib/layout/normalize';
 import { renderLayoutHTML } from '@/lib/layout/render';
 import { renderPdf } from '@/lib/pdf';
 import type { LayoutInput } from '@/lib/layout/types';
@@ -93,8 +93,12 @@ async function runStage4(jobId: string): Promise<void> {
 
   const cleanDataUrl = `data:image/png;base64,${cleanPng.toString('base64')}`;
 
-  const layoutInput = normalizeVisionResponse({
-    raw: rawVision,
+  // Load brief from DB; default to empty if not set (Req 8.3, 8.4)
+  const brief = getTextBrief(jobId) ?? { textItems: [] };
+
+  const layoutInput = mergeBriefWithVisionLayout({
+    brief,
+    visionResponse: rawVision,
     imageWidthPx: rawVision.imageWidthPx,
     imageHeightPx: rawVision.imageHeightPx,
     canvasWidthMm: job.width_mm,
@@ -111,7 +115,7 @@ async function runStage4(jobId: string): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// E2E Test
+// E2E Test — original full pipeline
 // ---------------------------------------------------------------------------
 
 describe('E2E — Full pipeline with mocked OpenAI', () => {
@@ -127,6 +131,13 @@ describe('E2E — Full pipeline with mocked OpenAI', () => {
 
     const originalJpg = await fs.readFile(path.join(FIXTURES_DIR, 'original.jpg'));
     await localStorage.saveBytes(jobId, 'original.jpg', originalJpg);
+
+    // Set a text brief so the merge has something to work with
+    await setTextBrief(jobId, {
+      textItems: [
+        { id: crypto.randomUUID(), label: 'titulo', value: 'PROMOÇÃO' },
+      ],
+    });
 
     const t1 = transitionStatus(jobId, ['created'], 'iterating');
     expect(t1).toBe(true);
@@ -182,10 +193,10 @@ describe('E2E — Full pipeline with mocked OpenAI', () => {
     // Assert background image is embedded as base64
     expect(html).toContain('<img class="bg" src="data:image/png;base64,');
 
-    // Assert two text elements (from vision.json fixture with 2 elements)
+    // Assert one text element (brief has 1 non-empty item, vision has 2 → min(1,2)=1 matched)
     const textDivMatches = html.match(/<div class="text"/g);
     expect(textDivMatches).not.toBeNull();
-    expect(textDivMatches!.length).toBe(2);
+    expect(textDivMatches!.length).toBe(1);
 
     // -----------------------------------------------------------------------
     // P5: Verify background integrity
@@ -247,12 +258,16 @@ describe('E2E — Full pipeline with mocked OpenAI', () => {
     expect(r2).toBe(false);
   });
 
-  it('vision.json fixture é válido contra VisionResponseSchema', async () => {
+  it('vision.json fixture é válido contra VisionResponseSchema e tem campos label', async () => {
     const raw = JSON.parse(await fs.readFile(path.join(FIXTURES_DIR, 'vision.json'), 'utf-8'));
     const result = VisionResponseSchema.safeParse(raw);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.textElements.length).toBe(2);
+      // Task 2.1 added `label` to the schema — verify the fixture has it
+      for (const el of result.data.textElements) {
+        expect(typeof el.label).toBe('string');
+      }
     }
   });
 
@@ -274,4 +289,184 @@ describe('E2E — Full pipeline with mocked OpenAI', () => {
       localStorage.saveBytes('not-a-uuid', 'test.png', Buffer.from('data')),
     ).rejects.toThrow();
   });
+
+  // -----------------------------------------------------------------------
+  // Task 8.1 — Path A scenario (with reference image / text_review flow)
+  // -----------------------------------------------------------------------
+
+  it('Path A — brief sentinel values appear in layout.json, Vision content is not leaked (P-BRIEF-2)', async () => {
+    const jobId = crypto.randomUUID();
+    const widthMm = 300;
+    const heightMm = 500;
+
+    // Simulate the analyze-reference flow: job starts at text_review
+    insertJob({ id: jobId, widthMm, heightMm, initialPrompt: 'Banner com promoção', initialStatus: 'text_review' });
+
+    // Save original.jpg (Path A has a reference image)
+    const originalJpg = await fs.readFile(path.join(FIXTURES_DIR, 'original.jpg'));
+    await localStorage.saveBytes(jobId, 'original.jpg', originalJpg);
+
+    // Set a text brief with known sentinel values (different from vision.json "Hello"/"World")
+    const sentinelId1 = crypto.randomUUID();
+    const sentinelId2 = crypto.randomUUID();
+    await setTextBrief(jobId, {
+      textItems: [
+        { id: sentinelId1, label: 'titulo', value: 'SENTINEL_TEXT' },
+        { id: sentinelId2, label: 'preco', value: 'R$ 99,90' },
+      ],
+    });
+
+    // Transition to iterating (simulating POST /api/jobs continuation)
+    const t1 = transitionStatus(jobId, ['text_review'], 'iterating');
+    expect(t1).toBe(true);
+
+    // Save an iteration image
+    const iterPng = await fs.readFile(path.join(FIXTURES_DIR, 'iter.png'));
+    await localStorage.saveBytes(jobId, 'iterations/1.png', iterPng);
+    updateJob(jobId, { current_iteration: 1 });
+
+    // Approve → processing_step4 → preview_ready
+    const t4 = transitionStatus(jobId, ['iterating'], 'processing_step4');
+    expect(t4).toBe(true);
+
+    await runStage4(jobId);
+
+    const job = getJob(jobId);
+    expect(job?.status).toBe('preview_ready');
+
+    // Read layout.json and verify P-BRIEF-2
+    const layoutPersisted = await localStorage.readJson<LayoutInput>(jobId, 'layout.json');
+
+    // The brief has 2 non-empty items; vision.json has 2 elements → 2 matched
+    expect(layoutPersisted.textElements.length).toBe(2);
+
+    // Content must come from the brief (sentinel values), NOT from vision.json ("Hello"/"World")
+    const contents = layoutPersisted.textElements.map((el) => el.content);
+    expect(contents).toContain('SENTINEL_TEXT');
+    expect(contents).toContain('R$ 99,90');
+
+    // Vision content fields must NOT appear
+    expect(contents).not.toContain('Hello');
+    expect(contents).not.toContain('World');
+
+    // IDs must match the brief item ids (P-BRIEF-2, Req 8.8)
+    const ids = layoutPersisted.textElements.map((el) => el.id);
+    expect(ids).toContain(sentinelId1);
+    expect(ids).toContain(sentinelId2);
+
+    // Render PDF to confirm the full pipeline completes
+    const t7 = transitionStatus(jobId, ['preview_ready'], 'rendering_pdf');
+    expect(t7).toBe(true);
+
+    const cleanPng = await localStorage.readBytes(jobId, 'clean.png');
+    const cleanDataUrl = `data:image/png;base64,${cleanPng.toString('base64')}`;
+    const layoutForRender = { ...layoutPersisted, background: { dataUrl: cleanDataUrl } };
+    const html = renderLayoutHTML(layoutForRender);
+    const pdfBuffer = await renderPdf({ html, widthMm, heightMm });
+    await localStorage.saveBytes(jobId, 'final.pdf', pdfBuffer);
+
+    const tDone = transitionStatus(jobId, ['rendering_pdf'], 'pdf_ready');
+    expect(tDone).toBe(true);
+
+    expect(pdfBuffer.slice(0, 5).toString('ascii')).toBe('%PDF-');
+  }, 60000);
+
+  // -----------------------------------------------------------------------
+  // Task 8.2 — Path B scenario (no reference image)
+  // -----------------------------------------------------------------------
+
+  it('Path B — no original.jpg, text-brief.json round-trips, layout content from brief (P-PERSISTENCE-PARITY-1)', async () => {
+    const jobId = crypto.randomUUID();
+    const widthMm = 200;
+    const heightMm = 300;
+
+    // Path B: fresh creation, no reference image
+    insertJob({ id: jobId, widthMm, heightMm, initialPrompt: 'Flyer sem imagem' });
+
+    // Set text brief with ≥1 non-empty item (required for Path B)
+    const briefItemId = crypto.randomUUID();
+    const brief = {
+      textItems: [
+        { id: briefItemId, label: 'titulo', value: 'OFERTA ESPECIAL' },
+        { id: crypto.randomUUID(), label: 'preco', value: 'R$ 49,90' },
+      ],
+    };
+    await setTextBrief(jobId, brief);
+
+    // Assert original.jpg does NOT exist (Path B — no reference image)
+    expect(await localStorage.exists(jobId, 'original.jpg')).toBe(false);
+
+    // Assert text-brief.json exists and matches the brief (P-PERSISTENCE-PARITY-1)
+    const briefOnDisk = await localStorage.readJson<typeof brief>(jobId, 'text-brief.json');
+    expect(briefOnDisk.textItems.length).toBe(2);
+    expect(briefOnDisk.textItems[0]!.value).toBe('OFERTA ESPECIAL');
+    expect(briefOnDisk.textItems[1]!.value).toBe('R$ 49,90');
+
+    // Also verify DB round-trip
+    const briefFromDb = getTextBrief(jobId);
+    expect(briefFromDb).not.toBeNull();
+    expect(briefFromDb!.textItems.length).toBe(2);
+    expect(briefFromDb!.textItems[0]!.value).toBe('OFERTA ESPECIAL');
+
+    // Transition to iterating (simulating POST /api/jobs fresh creation)
+    const t1 = transitionStatus(jobId, ['created'], 'iterating');
+    expect(t1).toBe(true);
+
+    // Save an iteration image (simulating generateImageToImage with 1×1 transparent PNG fallback)
+    const iterPng = await fs.readFile(path.join(FIXTURES_DIR, 'iter.png'));
+    await localStorage.saveBytes(jobId, 'iterations/1.png', iterPng);
+    updateJob(jobId, { current_iteration: 1 });
+
+    // Iterate once more
+    const iterPng2 = await fs.readFile(path.join(FIXTURES_DIR, 'iter.png'));
+    await localStorage.saveBytes(jobId, 'iterations/2.png', iterPng2);
+    updateJob(jobId, { current_iteration: 2 });
+
+    // Approve → processing_step4 → preview_ready
+    const t4 = transitionStatus(jobId, ['iterating'], 'processing_step4');
+    expect(t4).toBe(true);
+
+    await runStage4(jobId);
+
+    const job = getJob(jobId);
+    expect(job?.status).toBe('preview_ready');
+
+    // Confirm original.jpg still does NOT exist (Path B invariant)
+    expect(await localStorage.exists(jobId, 'original.jpg')).toBe(false);
+
+    // Confirm text-brief.json still exists and matches text_brief_json (P-PERSISTENCE-PARITY-1)
+    const briefOnDiskAfter = await localStorage.readJson<typeof brief>(jobId, 'text-brief.json');
+    const briefFromDbAfter = getTextBrief(jobId);
+    expect(briefFromDbAfter).not.toBeNull();
+    expect(briefOnDiskAfter.textItems.length).toBe(briefFromDbAfter!.textItems.length);
+    expect(briefOnDiskAfter.textItems[0]!.value).toBe(briefFromDbAfter!.textItems[0]!.value);
+    expect(briefOnDiskAfter.textItems[1]!.value).toBe(briefFromDbAfter!.textItems[1]!.value);
+
+    // Verify layout.json textElements content comes from the brief
+    const layoutPersisted = await localStorage.readJson<LayoutInput>(jobId, 'layout.json');
+    const contents = layoutPersisted.textElements.map((el) => el.content);
+    expect(contents).toContain('OFERTA ESPECIAL');
+    expect(contents).toContain('R$ 49,90');
+
+    // Vision content must NOT appear
+    expect(contents).not.toContain('Hello');
+    expect(contents).not.toContain('World');
+
+    // Render PDF to confirm the full pipeline completes
+    const t7 = transitionStatus(jobId, ['preview_ready'], 'rendering_pdf');
+    expect(t7).toBe(true);
+
+    const cleanPng = await localStorage.readBytes(jobId, 'clean.png');
+    const cleanDataUrl = `data:image/png;base64,${cleanPng.toString('base64')}`;
+    const layoutForRender = { ...layoutPersisted, background: { dataUrl: cleanDataUrl } };
+    const html = renderLayoutHTML(layoutForRender);
+    const pdfBuffer = await renderPdf({ html, widthMm, heightMm });
+    await localStorage.saveBytes(jobId, 'final.pdf', pdfBuffer);
+
+    const tDone = transitionStatus(jobId, ['rendering_pdf'], 'pdf_ready');
+    expect(tDone).toBe(true);
+
+    expect(pdfBuffer.slice(0, 5).toString('ascii')).toBe('%PDF-');
+    expect(await localStorage.exists(jobId, 'final.pdf')).toBe(true);
+  }, 60000);
 });

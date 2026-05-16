@@ -62,16 +62,44 @@ describe('generateImageToImage', () => {
     );
   });
 
-  it('envia o prompt correto', async () => {
+  it('envia o prompt correto (contém o userPrompt no prompt interpolado)', async () => {
     mockImagesEdit.mockResolvedValueOnce({
       data: [{ b64_json: FAKE_B64 }],
     });
 
     await generateImageToImage({ baseImage: FAKE_PNG, prompt: 'my custom prompt' });
 
-    expect(mockImagesEdit).toHaveBeenCalledWith(
-      expect.objectContaining({ prompt: 'my custom prompt' }),
-    );
+    const call = mockImagesEdit.mock.calls[0]?.[0] as { prompt: string };
+    expect(call.prompt).toContain('my custom prompt');
+  });
+
+  it('injeta bloco "no text" quando textItems está vazio', async () => {
+    mockImagesEdit.mockResolvedValueOnce({
+      data: [{ b64_json: FAKE_B64 }],
+    });
+
+    await generateImageToImage({ baseImage: FAKE_PNG, prompt: 'test', textItems: [] });
+
+    const call = mockImagesEdit.mock.calls[0]?.[0] as { prompt: string };
+    expect(call.prompt).toContain('text-free image');
+  });
+
+  it('injeta lista de textos quando textItems é não-vazio', async () => {
+    mockImagesEdit.mockResolvedValueOnce({
+      data: [{ b64_json: FAKE_B64 }],
+    });
+
+    const textItems = [
+      { id: '00000000-0000-4000-8000-000000000001', label: 'titulo', value: 'PROMOÇÃO' },
+      { id: '00000000-0000-4000-8000-000000000002', label: 'preco', value: 'R$ 19,90' },
+    ];
+
+    await generateImageToImage({ baseImage: FAKE_PNG, prompt: 'test', textItems });
+
+    const call = mockImagesEdit.mock.calls[0]?.[0] as { prompt: string };
+    expect(call.prompt).toContain('Include EXACTLY these texts');
+    expect(call.prompt).toContain('- titulo: "PROMOÇÃO"');
+    expect(call.prompt).toContain('- preco: "R$ 19,90"');
   });
 
   it('retorna Buffer PNG a partir de b64_json', async () => {

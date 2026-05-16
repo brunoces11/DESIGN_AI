@@ -14,7 +14,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getJob, insertJob, transitionStatus, updateJob, setTextBrief } from '@/lib/db';
 import { localStorage } from '@/lib/storage';
-import { generateImageToImage } from '@/lib/openai';
+import { generateImageToImage, type ImageModel } from '@/lib/openai';
 import type { EditableTextItem } from '@/lib/layout/types';
 
 // ---------------------------------------------------------------------------
@@ -42,6 +42,7 @@ const RequestSchema = z.object({
   heightMm: z.coerce.number().int().positive(),
   prompt: z.string().min(1),
   textItems: z.array(EditableTextItemSchema), // no max length — Req 5.4, 12.4
+  imageModel: z.enum(['gpt-image-1', 'gpt-image-2']).optional(),
 });
 
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10 MB
@@ -78,6 +79,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       heightMm: formData.get('heightMm'),
       prompt: formData.get('prompt'),
       textItems: parsedTextItems,
+      imageModel: formData.get('imageModel') || undefined,
     });
     if (!parsed.success) {
       return NextResponse.json(
@@ -85,7 +87,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         { status: 400 },
       );
     }
-    const { jobId: jobIdFromBody, widthMm, heightMm, prompt, textItems } = parsed.data;
+    const { jobId: jobIdFromBody, widthMm, heightMm, prompt, textItems, imageModel } = parsed.data;
 
     // Optional image (Req 5.1)
     const imageFile = formData.get('image');
@@ -136,7 +138,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       const baseImage =
         uploadedImage ?? (await localStorage.readBytes(jobId, 'original.jpg'));
 
-      const generated = await runGeneration({ baseImage, prompt, widthMm, heightMm, textItems });
+      const generated = await runGeneration({ baseImage, prompt, widthMm, heightMm, textItems, imageModel });
       await localStorage.saveBytes(jobId, 'iterations/1.png', generated);
       updateJob(jobId, { current_iteration: 1 });
 
@@ -180,7 +182,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // Base image: uploaded image or 1×1 transparent PNG fallback (Req 5.13)
     const baseImage = uploadedImage ?? TRANSPARENT_PNG_1X1;
 
-    const generated = await runGeneration({ baseImage, prompt, widthMm, heightMm, textItems });
+    const generated = await runGeneration({ baseImage, prompt, widthMm, heightMm, textItems, imageModel });
     await localStorage.saveBytes(jobId, 'iterations/1.png', generated);
     updateJob(jobId, { current_iteration: 1 });
 
@@ -210,8 +212,8 @@ async function runGeneration(args: {
   widthMm: number;
   heightMm: number;
   textItems: EditableTextItem[];
+  imageModel?: ImageModel;
 }): Promise<Buffer> {
-  // Req 5.10, 12.5: filter to non-empty values for the generation prompt
   const effective = args.textItems.filter((t) => t.value.trim().length > 0);
   return generateImageToImage({
     baseImage: args.baseImage,
@@ -219,5 +221,6 @@ async function runGeneration(args: {
     widthMm: args.widthMm,
     heightMm: args.heightMm,
     textItems: effective,
+    imageModel: args.imageModel,
   });
 }

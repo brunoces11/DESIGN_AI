@@ -193,21 +193,62 @@ const S: Record<string, React.CSSProperties> = {
 };
 
 // ---------------------------------------------------------------------------
+// Image model selector
+// ---------------------------------------------------------------------------
+
+type ImageModel = 'gpt-image-1' | 'gpt-image-2';
+
+const IMAGE_MODEL_OPTIONS: { value: ImageModel; label: string; badge?: string }[] = [
+  { value: 'gpt-image-1', label: 'GPT Image 1' },
+  { value: 'gpt-image-2', label: 'GPT Image 2', badge: 'NEW' },
+];
+
+// ---------------------------------------------------------------------------
 // TopBar — shared across all steps
 // ---------------------------------------------------------------------------
 
-function TopBar({ onSettings }: { onSettings: () => void }) {
+function TopBar({
+  onSettings,
+  imageModel,
+  onImageModelChange,
+}: {
+  onSettings: () => void;
+  imageModel: ImageModel;
+  onImageModelChange: (m: ImageModel) => void;
+}) {
   return (
     <div style={S.topBar}>
       <h1 style={S.topBarTitle}>🎨 AI Print Art</h1>
-      <button
-        style={S.gearBtn}
-        onClick={onSettings}
-        aria-label="Open prompt settings"
-        title="Prompt Settings"
-      >
-        ⚙️
-      </button>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <select
+          value={imageModel}
+          onChange={(e) => onImageModelChange(e.target.value as ImageModel)}
+          style={{
+            padding: '5px 8px',
+            border: '1px solid #d1d5db',
+            borderRadius: 6,
+            fontSize: 13,
+            background: '#fff',
+            color: '#374151',
+            cursor: 'pointer',
+          }}
+          title="Modelo de geração de imagem"
+        >
+          {IMAGE_MODEL_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}{opt.badge ? ` ✨` : ''}
+            </option>
+          ))}
+        </select>
+        <button
+          style={S.gearBtn}
+          onClick={onSettings}
+          aria-label="Open prompt settings"
+          title="Prompt Settings"
+        >
+          ⚙️
+        </button>
+      </div>
     </div>
   );
 }
@@ -221,6 +262,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [imageModel, setImageModel] = useState<ImageModel>('gpt-image-1');
 
   // Shared form state (Task 7.1 — hoisted to top-level)
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -359,6 +401,7 @@ export default function Home() {
       fd.append('heightMm', String(hMm));
       fd.append('prompt', prompt);
       fd.append('textItems', JSON.stringify(textItems));
+      fd.append('imageModel', imageModel);
       if (state.step === 'text_review') fd.append('jobId', state.jobId);
       if (imageFile) {
         const compressed = await imageCompression(imageFile, COMPRESSION_OPTIONS);
@@ -385,6 +428,7 @@ export default function Home() {
       const fd = new FormData();
       fd.append('prompt', iteratePrompt);
       fd.append('textItems', JSON.stringify(textItems));
+      fd.append('imageModel', imageModel);
       if (iterateImage) {
         const compressed = await imageCompression(iterateImage, COMPRESSION_OPTIONS);
         fd.append('image', compressed, 'image.jpg');
@@ -743,7 +787,11 @@ export default function Home() {
 
   return (
     <div style={S.page}>
-      <TopBar onSettings={() => setShowSettings(true)} />
+      <TopBar
+        onSettings={() => setShowSettings(true)}
+        imageModel={imageModel}
+        onImageModelChange={setImageModel}
+      />
       {renderStep()}
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
     </div>

@@ -15,6 +15,12 @@ import { loadPrompts, interpolate, formatTextInstructions } from './prompts';
 import type { EditableTextItem } from './layout/types';
 
 // ---------------------------------------------------------------------------
+// Image model types
+// ---------------------------------------------------------------------------
+
+export type ImageModel = 'gpt-image-1' | 'gpt-image-2';
+
+// ---------------------------------------------------------------------------
 // Singleton client
 // ---------------------------------------------------------------------------
 
@@ -52,9 +58,11 @@ export async function generateImageToImage(args: {
   widthMm?: number;
   heightMm?: number;
   textItems?: EditableTextItem[];
+  imageModel?: ImageModel;
 }): Promise<Buffer> {
   const client = getClient();
   const prompts = loadPrompts();
+  const model: ImageModel = args.imageModel ?? 'gpt-image-1';
 
   const finalPrompt = interpolate(prompts.imageGeneration, {
     userPrompt: args.prompt,
@@ -63,24 +71,39 @@ export async function generateImageToImage(args: {
     textInstructions: formatTextInstructions(args.textItems ?? []),
   });
 
-  // Pick the closest supported aspect ratio based on physical dimensions.
-  // gpt-image-1 supports: '1024x1024' (square), '1536x1024' (landscape), '1024x1536' (portrait).
-  const w = args.widthMm ?? 1;
-  const h = args.heightMm ?? 1;
-  const ratio = w / h;
-  const size: '1024x1024' | '1536x1024' | '1024x1536' =
-    ratio > 1.2 ? '1536x1024' : ratio < 0.833 ? '1024x1536' : '1024x1024';
-
-  // Convert buffer to a File object for the API
   const imageFile = new File([args.baseImage], 'image.jpg', { type: 'image/jpeg' });
 
-  const response = await client.images.edit({
-    model: 'gpt-image-1',
-    image: imageFile,
-    prompt: finalPrompt,
-    n: 1,
-    size,
-  });
+  let response: Awaited<ReturnType<typeof client.images.edit>>;
+
+  if (model === 'gpt-image-2') {
+    // gpt-image-2: use size:'auto' so the model picks the best aspect ratio,
+    // plus quality:'high' for best output. The 'auto' size is the closest
+    // available option to custom dimensions on this model.
+    response = await client.images.edit({
+      model: 'gpt-image-2',
+      image: imageFile,
+      prompt: finalPrompt,
+      n: 1,
+      size: 'auto',
+      quality: 'high',
+    } as Parameters<typeof client.images.edit>[0]);
+  } else {
+    // gpt-image-1: pick the closest supported fixed size based on physical dimensions.
+    // Supported: '1024x1024' (square), '1536x1024' (landscape), '1024x1536' (portrait).
+    const w = args.widthMm ?? 1;
+    const h = args.heightMm ?? 1;
+    const ratio = w / h;
+    const size: '1024x1024' | '1536x1024' | '1024x1536' =
+      ratio > 1.2 ? '1536x1024' : ratio < 0.833 ? '1024x1536' : '1024x1024';
+
+    response = await client.images.edit({
+      model: 'gpt-image-1',
+      image: imageFile,
+      prompt: finalPrompt,
+      n: 1,
+      size,
+    });
+  }
 
   const imageData = response.data?.[0];
   if (!imageData) {

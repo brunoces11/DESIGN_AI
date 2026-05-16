@@ -7,7 +7,7 @@
 
 import { describe, it, expect } from 'vitest';
 import * as fc from 'fast-check';
-import { buildBriefFromVision } from '@/app/api/jobs/analyze-reference/route';
+import { buildBriefFromVision } from '@/lib/openai/buildBrief';
 import { sortByReadingOrder } from '@/lib/layout/normalize';
 import { arbVisionResponse } from '../fixtures/arbs';
 

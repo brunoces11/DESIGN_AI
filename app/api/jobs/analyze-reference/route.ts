@@ -29,9 +29,9 @@ import { z } from 'zod';
 import { insertJob, updateJob, transitionStatus } from '@/lib/db';
 import { localStorage } from '@/lib/storage';
 import { extractLayoutVisionWithRetry } from '@/lib/openai/visionRetry';
-import { sortByReadingOrder } from '@/lib/layout/normalize';
+import { buildBriefFromVision } from '@/lib/openai/buildBrief';
 import type { VisionResponse } from '@/lib/layout/normalize';
-import type { TextBrief, EditableTextItem } from '@/lib/layout/types';
+import type { TextBrief } from '@/lib/layout/types';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -48,36 +48,6 @@ const RequestSchema = z.object({
   heightMm: z.coerce.number().int().positive(),
   prompt: z.string().optional().default(''),
 });
-
-// ---------------------------------------------------------------------------
-// Pure helper — task 4.2
-// ---------------------------------------------------------------------------
-
-/**
- * Pure function: builds a TextBrief from a validated VisionResponse.
- *
- * Steps:
- *   1. Sorts the Vision text elements by reading order via sortByReadingOrder.
- *   2. Maps each element to an EditableTextItem with a fresh UUID v4 id,
- *      the element's label, and the element's content as value.
- *   3. Returns { textItems }.
- *
- * Pure: no I/O, deterministic given the same VisionResponse (UUIDs are the
- * only non-deterministic part — they are intentionally fresh per call).
- *
- * Exported as a named export for testability (task 4.2, design § f).
- *
- * Refs: design § f; Req 1.8, 2.4, 2.6
- */
-export function buildBriefFromVision(vision: VisionResponse): TextBrief {
-  const sorted = sortByReadingOrder(vision.textElements);
-  const textItems: EditableTextItem[] = sorted.map((v) => ({
-    id: crypto.randomUUID(),
-    label: v.label,
-    value: v.content,
-  }));
-  return { textItems };
-}
 
 // ---------------------------------------------------------------------------
 // Route handler — task 4.1

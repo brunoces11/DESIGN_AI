@@ -9,23 +9,19 @@
  *
  * Model: gpt-image-2 exclusively.
  *
- * The gpt-image-2 images.edit API accepts only these fixed sizes:
- *   '1024x1024'  (square,    ratio 1.00)
- *   '1536x1024'  (landscape, ratio 1.50)
- *   '1024x1536'  (portrait,  ratio 0.67)
- *   'auto'       (model picks — equivalent to the closest of the above)
- *
- * Custom pixel dimensions are NOT supported by the API. We pick the fixed
- * size whose aspect ratio is closest to the canvas dimensions (widthMm/heightMm)
- * to minimise distortion. The HTML/CSS render layer stretches the background
- * to fill the exact canvas via object-fit:fill, so the PDF always comes out
- * at the correct physical dimensions regardless of which size was chosen.
+ * Per OpenAI's recommended pattern, aspect ratio is communicated via the
+ * PROMPT (in the form "strict W:H aspect ratio", with counter-examples),
+ * not via pixel dimensions in the size parameter. The API call uses
+ * size: 'auto' so the model picks the closest supported output size for
+ * the requested composition. The HTML/CSS render layer then stretches the
+ * background to the exact mm canvas via object-fit:fill, so the PDF always
+ * comes out at the correct physical dimensions.
  *
  * Requirements: 9.1–9.4
  */
 
 import OpenAI from 'openai';
-import { loadPrompts, interpolate, formatTextInstructions, formatAspectRatio } from './prompts';
+import { loadPrompts, interpolate, formatTextInstructions, formatAspectRatioInstructions } from './prompts';
 import type { EditableTextItem } from './layout/types';
 
 // ---------------------------------------------------------------------------
@@ -50,42 +46,15 @@ function getClient(): OpenAI {
 }
 
 // ---------------------------------------------------------------------------
-// Size selection helper
-// ---------------------------------------------------------------------------
-
-/**
- * Picks the gpt-image-2 fixed size whose aspect ratio is closest to the
- * given canvas dimensions.
- *
- * Supported sizes and their ratios (w/h):
- *   1024x1024  → 1.000  (square)
- *   1536x1024  → 1.500  (landscape)
- *   1024x1536  → 0.667  (portrait)
- *
- * Selection boundaries (midpoints between adjacent ratios):
- *   ratio > 1.25  → landscape  (midpoint between 1.00 and 1.50)
- *   ratio < 0.833 → portrait   (midpoint between 0.67 and 1.00)
- *   otherwise     → square
- */
-function pickSize(widthMm: number, heightMm: number): '1024x1024' | '1536x1024' | '1024x1536' {
-  const ratio = widthMm / Math.max(heightMm, 1);
-  if (ratio > 1.25) return '1536x1024';
-  if (ratio < 0.833) return '1024x1536';
-  return '1024x1024';
-}
-
-// ---------------------------------------------------------------------------
 // generateImageToImage
 // ---------------------------------------------------------------------------
 
 /**
  * Generates an image from an existing image + prompt using gpt-image-2.
  * The prompt template is loaded from the prompts store and interpolated
- * with the user's prompt, print dimensions, and text instructions.
- *
- * The size parameter is derived from widthMm/heightMm to pick the closest
- * supported fixed size — this is the best approximation possible given the
- * API's fixed-size constraint.
+ * with the user's prompt, the aspect-ratio instruction block, and text
+ * instructions. The size parameter is 'auto' — the proportion is enforced
+ * via the prompt itself.
  *
  * Requirements: 2.2, 3.1
  */
@@ -101,13 +70,10 @@ export async function generateImageToImage(args: {
 
   const finalPrompt = interpolate(prompts.imageGeneration, {
     userPrompt: args.prompt,
-    widthMm: String(args.widthMm ?? ''),
-    heightMm: String(args.heightMm ?? ''),
-    aspectRatio: formatAspectRatio(args.widthMm ?? 1, args.heightMm ?? 1),
+    aspectRatioBlock: formatAspectRatioInstructions(args.widthMm ?? 1, args.heightMm ?? 1),
     textInstructions: formatTextInstructions(args.textItems ?? []),
   });
 
-  const size = pickSize(args.widthMm ?? 1, args.heightMm ?? 1);
   const imageFile = new File([args.baseImage], 'image.jpg', { type: 'image/jpeg' });
 
   const response = await client.images.edit({
@@ -115,7 +81,7 @@ export async function generateImageToImage(args: {
     image: imageFile,
     prompt: finalPrompt,
     n: 1,
-    size,
+    size: 'auto',
     quality: 'high',
   } as Parameters<typeof client.images.edit>[0]);
 
@@ -159,10 +125,8 @@ export async function regenerateWithoutText(args: {
 
   const finalPrompt = interpolate(prompts.removeText, {
     originalPrompt: args.originalPrompt,
-    aspectRatio: formatAspectRatio(args.widthMm ?? 1, args.heightMm ?? 1),
+    aspectRatioBlock: formatAspectRatioInstructions(args.widthMm ?? 1, args.heightMm ?? 1),
   });
-
-  const size = pickSize(args.widthMm ?? 1, args.heightMm ?? 1);
 
   // Use PNG to avoid JPEG compression artifacts on the approved image.
   const imageFile = new File([args.baseImage], 'approved.png', { type: 'image/png' });
@@ -172,7 +136,7 @@ export async function regenerateWithoutText(args: {
     image: imageFile,
     prompt: finalPrompt,
     n: 1,
-    size,
+    size: 'auto',
     quality: 'high',
   } as Parameters<typeof client.images.edit>[0]);
 

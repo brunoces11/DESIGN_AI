@@ -50,16 +50,21 @@ export const DEFAULT_PROMPTS: PromptsConfig = {
   /**
    * Stage 1 & 3 — Image generation (gpt-image-2)
    * The user's prompt IS the full prompt — no system wrapper by default.
-   * This template wraps it with mandatory aspect ratio and text instructions.
-   * {{userPrompt}} — the text typed by the user in the form
-   * {{widthMm}} / {{heightMm}} — physical dimensions of the print piece (millimetres)
-   * {{aspectRatio}} — pre-formatted aspect ratio string (e.g. "9:2 (decimal 4.50, landscape, very wide panoramic)")
+   * This template wraps it with a mandatory aspect-ratio instruction block
+   * (OpenAI-recommended pattern) followed by the text instructions.
+   *
+   * Variables:
+   *   {{userPrompt}}            — the text typed by the user in the form
+   *   {{aspectRatioBlock}}      — full aspect-ratio instruction block (multi-line),
+   *                               built from canvas dimensions via formatAspectRatioInstructions().
+   *                               Aspect ratio is the visual proportion. Physical mm dimensions
+   *                               are NOT injected here — they belong to print metadata, not to the
+   *                               image-composition prompt.
+   *   {{textInstructions}}      — text-content rules built from the TextBrief.
    */
   imageGeneration: `{{userPrompt}}
 
-MANDATORY ASPECT RATIO: The image MUST be composed for an aspect ratio of {{aspectRatio}}.
-Physical print dimensions: {{widthMm}}mm × {{heightMm}}mm.
-Compose the entire scene to fit this aspect ratio precisely. Do NOT crop, letterbox, or pad. The whole canvas must be filled with intentional content matching the requested orientation.
+{{aspectRatioBlock}}
 
 {{textInstructions}}`,
 
@@ -67,12 +72,15 @@ Compose the entire scene to fit this aspect ratio precisely. Do NOT crop, letter
    * Stage 4B — Regenerate without text (gpt-image-2)
    * The approved image is sent as the base. The goal is pixel-perfect
    * preservation of everything except the text elements.
-   * {{originalPrompt}} — the initial prompt from Stage 1
-   * {{aspectRatio}} — pre-formatted aspect ratio string of the canvas
+   *
+   * Variables:
+   *   {{originalPrompt}}    — the initial prompt from Stage 1
+   *   {{aspectRatioBlock}}  — full aspect-ratio instruction block (multi-line),
+   *                           built from canvas dimensions via formatAspectRatioInstructions().
    */
   removeText: `You are given an image. Your task is to reproduce this image IDENTICALLY, with ONE single change: remove all text, letters, numbers, words, and typographic elements.
 
-MANDATORY ASPECT RATIO: The output image MUST keep an aspect ratio of {{aspectRatio}}.
+{{aspectRatioBlock}}
 
 CRITICAL RULES — follow every one without exception:
 1. Preserve the EXACT same composition, layout, and spatial arrangement of all visual elements.
@@ -177,7 +185,7 @@ export const PROMPT_DEFINITIONS: PromptDefinition[] = [
     id: 'imageGeneration',
     label: 'Image Generation',
     description:
-      'Sent to gpt-image-2 during Stage 1 (initial generation) and Stage 3 (refinement iterations). The user\'s prompt is injected via {{userPrompt}}, and the canvas aspect ratio is injected via {{aspectRatio}}.',
+      'Sent to gpt-image-2 during Stage 1 (initial generation) and Stage 3 (refinement iterations). The user\'s prompt is injected via {{userPrompt}}, and the canvas aspect ratio instruction block is injected via {{aspectRatioBlock}}.',
     variables: [
       {
         name: 'userPrompt',
@@ -185,19 +193,11 @@ export const PROMPT_DEFINITIONS: PromptDefinition[] = [
         example: 'A vibrant banner for a coffee shop with warm colors',
       },
       {
-        name: 'widthMm',
-        description: 'Physical width of the print piece in millimetres',
-        example: '300',
-      },
-      {
-        name: 'heightMm',
-        description: 'Physical height of the print piece in millimetres',
-        example: '500',
-      },
-      {
-        name: 'aspectRatio',
-        description: 'Pre-formatted aspect ratio string (simplified fraction + decimal + orientation hint), computed from widthMm/heightMm',
-        example: '9:2 (decimal 4.50, landscape, very wide panoramic)',
+        name: 'aspectRatioBlock',
+        description:
+          'Multi-line aspect-ratio instruction block (OpenAI-recommended pattern), built from the canvas dimensions. Includes simplified ratio, decimal, orientation, and counter-examples.',
+        example:
+          'MANDATORY ASPECT RATIO: 9:2 (decimal 4.50).\nCreate a horizontal panoramic image in a strict 9:2 aspect ratio.\nThe image must be 4.50 times wider than tall.\nCompose the scene natively for this horizontal panoramic format.\nDo not create a square image. Do not create a 16:9 image. Do not create a vertical image.\nFill the full frame as a 9:2 composition.',
       },
       {
         name: 'textInstructions',
@@ -212,7 +212,7 @@ export const PROMPT_DEFINITIONS: PromptDefinition[] = [
     id: 'removeText',
     label: 'Remove Text (Stage 4B)',
     description:
-      'Sent to gpt-image-2 to regenerate the approved image without any text. The original prompt is injected as scene context via {{originalPrompt}}, and the canvas aspect ratio is injected via {{aspectRatio}}.',
+      'Sent to gpt-image-2 to regenerate the approved image without any text. The original prompt is injected as scene context via {{originalPrompt}}, and the canvas aspect ratio instruction block is injected via {{aspectRatioBlock}}.',
     variables: [
       {
         name: 'originalPrompt',
@@ -220,9 +220,9 @@ export const PROMPT_DEFINITIONS: PromptDefinition[] = [
         example: 'A vibrant banner for a coffee shop with warm colors',
       },
       {
-        name: 'aspectRatio',
-        description: 'Pre-formatted aspect ratio string of the canvas',
-        example: '9:2 (decimal 4.50, landscape, very wide panoramic)',
+        name: 'aspectRatioBlock',
+        description: 'Multi-line aspect-ratio instruction block (same as in imageGeneration)',
+        example: 'MANDATORY ASPECT RATIO: 9:2 (decimal 4.50). Create a horizontal panoramic image in a strict 9:2 aspect ratio. ...',
       },
     ],
     template: DEFAULT_PROMPTS.removeText,
@@ -317,35 +317,89 @@ function gcd(a: number, b: number): number {
 }
 
 /**
- * Formats canvas dimensions as a human-readable aspect ratio string
- * suitable for embedding in an image-generation prompt.
- *
- * Returns a multi-part description:
- *   "<w>:<h> (decimal <r>, orientation <portrait|landscape|square>)"
- *
- * Examples:
- *   formatAspectRatio(900, 200)  → "9:2 (decimal 4.50, landscape, very wide panoramic)"
- *   formatAspectRatio(300, 500)  → "3:5 (decimal 0.60, portrait)"
- *   formatAspectRatio(1024, 1024) → "1:1 (decimal 1.00, square)"
- *
- * Pure, deterministic, no I/O.
+ * Computes the simplified aspect ratio of a rectangle as "W:H".
+ * Examples: 900x200 → "9:2", 300x500 → "3:5", 1024x1024 → "1:1".
  */
 export function formatAspectRatio(widthMm: number, heightMm: number): string {
   const w = Math.max(1, Math.round(widthMm));
   const h = Math.max(1, Math.round(heightMm));
   const g = gcd(w, h);
-  const wRatio = w / g;
-  const hRatio = h / g;
+  return `${w / g}:${h / g}`;
+}
+
+/**
+ * Picks an orientation label and a counter-examples list based on the
+ * decimal aspect ratio. The counter-examples explicitly tell the model
+ * what NOT to produce, which is the OpenAI-recommended pattern.
+ */
+function describeOrientation(decimal: number): {
+  orientation: string;
+  widerOrTallerSentence: string;
+  counterExamples: string;
+} {
+  if (decimal >= 0.95 && decimal <= 1.05) {
+    return {
+      orientation: 'square',
+      widerOrTallerSentence: 'The image must be a perfect square (1:1).',
+      counterExamples: 'Do not create a landscape image. Do not create a portrait image.',
+    };
+  }
+  if (decimal > 1.05) {
+    // Landscape
+    const times = decimal.toFixed(2);
+    const orientationLabel = decimal > 2.5 ? 'horizontal panoramic' : 'horizontal landscape';
+    return {
+      orientation: orientationLabel,
+      widerOrTallerSentence: `The image must be ${times} times wider than tall.`,
+      counterExamples:
+        decimal > 2.5
+          ? 'Do not create a square image. Do not create a 16:9 image. Do not create a vertical image.'
+          : 'Do not create a square image. Do not create a vertical image.',
+    };
+  }
+  // Portrait (decimal < 0.95)
+  const times = (1 / decimal).toFixed(2);
+  const orientationLabel = decimal < 0.4 ? 'vertical tall portrait' : 'vertical portrait';
+  return {
+    orientation: orientationLabel,
+    widerOrTallerSentence: `The image must be ${times} times taller than wide.`,
+    counterExamples:
+      decimal < 0.4
+        ? 'Do not create a square image. Do not create a 9:16 image. Do not create a horizontal image.'
+        : 'Do not create a square image. Do not create a horizontal image.',
+  };
+}
+
+/**
+ * Formats the FULL aspect-ratio instruction block in OpenAI's recommended
+ * pattern for image-generation prompts. Multi-sentence, with counter-examples
+ * to anchor the model on the requested proportion.
+ *
+ * Example output for 900x200:
+ *   MANDATORY ASPECT RATIO: 9:2 (decimal 4.50).
+ *   Create a horizontal panoramic image in a strict 9:2 aspect ratio.
+ *   The image must be 4.50 times wider than tall.
+ *   Compose the scene natively for this wide banner format.
+ *   Do not create a square image. Do not create a 16:9 image. Do not create a vertical image.
+ *   Fill the full frame as a 9:2 composition.
+ *
+ * Pure, deterministic, no I/O.
+ */
+export function formatAspectRatioInstructions(widthMm: number, heightMm: number): string {
+  const w = Math.max(1, Math.round(widthMm));
+  const h = Math.max(1, Math.round(heightMm));
   const decimal = w / h;
+  const ratio = formatAspectRatio(w, h);
+  const { orientation, widerOrTallerSentence, counterExamples } = describeOrientation(decimal);
 
-  let orientation: string;
-  if (decimal > 2.5) orientation = 'landscape, very wide panoramic';
-  else if (decimal > 1.15) orientation = 'landscape';
-  else if (decimal < 0.4) orientation = 'portrait, very tall vertical';
-  else if (decimal < 0.87) orientation = 'portrait';
-  else orientation = 'square';
-
-  return `${wRatio}:${hRatio} (decimal ${decimal.toFixed(2)}, ${orientation})`;
+  return [
+    `MANDATORY ASPECT RATIO: ${ratio} (decimal ${decimal.toFixed(2)}).`,
+    `Create a ${orientation} image in a strict ${ratio} aspect ratio.`,
+    widerOrTallerSentence,
+    `Compose the scene natively for this ${orientation} format.`,
+    counterExamples,
+    `Fill the full frame as a ${ratio} composition.`,
+  ].join('\n');
 }
 
 // ---------------------------------------------------------------------------

@@ -802,21 +802,17 @@ export default function Home() {
                   ✕ Fechar
                 </button>
               </div>
-              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', padding: 16 }}>
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'auto', padding: 16 }}>
                 <iframe
                   src={`/api/jobs/${state.jobId}/preview-html`}
                   style={{
                     border: 'none',
                     display: 'block',
-                    maxWidth: '100%',
-                    maxHeight: '100%',
-                    width: `${iframeW}px`,
-                    height: `${iframeH}px`,
-                    transform: `scale(${Math.min(
-                      (window.innerWidth - 32) / iframeW,
-                      (window.innerHeight - 80) / iframeH
-                    )})`,
-                    transformOrigin: 'center center',
+                    width: `calc(100vw - 32px)`,
+                    maxWidth: `${iframeW}px`,
+                    height: `calc((100vw - 32px) * ${state.heightMm} / ${state.widthMm})`,
+                    maxHeight: `calc(100vh - 80px)`,
+                    aspectRatio: `${state.widthMm} / ${state.heightMm}`,
                   }}
                   title="Layout Preview Fullscreen"
                 />

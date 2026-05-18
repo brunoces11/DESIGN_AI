@@ -17,7 +17,7 @@ import type { EditableTextItem } from './layout/types';
 // Types
 // ---------------------------------------------------------------------------
 
-export type PromptId = 'imageGeneration' | 'removeText' | 'visionLayout';
+export type PromptId = 'imageGeneration' | 'removeText' | 'visionLayout' | 'visionLocateBrief';
 
 export interface PromptDefinition {
   id: PromptId;
@@ -39,6 +39,7 @@ export interface PromptsConfig {
   imageGeneration: string;
   removeText: string;
   visionLayout: string;
+  visionLocateBrief: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -108,6 +109,54 @@ Return ONLY a valid JSON object matching this exact schema — no markdown, no e
 }
 
 Return elements ordered top-to-bottom (primary) and left-to-right (secondary when y-overlap exceeds 50% of the larger element height).`,
+
+  /**
+   * Stage 4A (supervised) — Vision brief locator (gpt-4o)
+   * Used when the brief is already known. The image is sent as an attachment.
+   * {{briefItems}} — JSON array of { id, label, value } injected at runtime.
+   *
+   * All coordinates are NORMALISED (0–1 fractions of image dimensions) so
+   * the result is independent of the actual pixel size of the image.
+   */
+  visionLocateBrief: `You are a precise layout analysis assistant.
+
+You will receive an image and a list of known text elements that appear in it.
+Your task is to locate each text element in the image and return its position and typographic properties.
+
+Known text elements (JSON):
+{{briefItems}}
+
+For each element in the list above, return its location and styling.
+All coordinates must be NORMALISED fractions of the image dimensions (values between 0.0 and 1.0):
+  - x, y: top-left corner of the bounding box (0,0 = top-left of image)
+  - width, height: size of the bounding box
+  - fontSizeRel: visual font size as a fraction of the image HEIGHT (e.g. 0.05 means the font is 5% of the image height)
+
+Return ONLY a valid JSON object — no markdown, no explanation:
+
+{
+  "items": [
+    {
+      "id": "<same id as provided in the input>",
+      "bbox": {
+        "x": <0.0–1.0>,
+        "y": <0.0–1.0>,
+        "width": <0.0–1.0>,
+        "height": <0.0–1.0>
+      },
+      "fontSizeRel": <0.0–1.0>,
+      "fontWeight": <integer multiple of 100 between 100 and 900>,
+      "color": "<CSS color string, e.g. '#FFFFFF'>",
+      "align": "<'left' | 'center' | 'right'>"
+    }
+  ]
+}
+
+Rules:
+- Return exactly one entry per input element, in the same order.
+- If a text element is not visible in the image, still return its id but set all numeric fields to 0 and color to '#000000'.
+- Do NOT invent new ids. Do NOT omit any id from the input list.
+- fontWeight must be a multiple of 100 (100, 200, … 900).`,
 };
 
 // ---------------------------------------------------------------------------
@@ -167,6 +216,20 @@ export const PROMPT_DEFINITIONS: PromptDefinition[] = [
     variables: [],
     template: DEFAULT_PROMPTS.visionLayout,
   },
+  {
+    id: 'visionLocateBrief',
+    label: 'Vision Brief Locator (Stage 4A supervised)',
+    description:
+      'Sent to gpt-4o Vision during Stage 4 when the brief is already known. The model locates each known text element by id and returns normalised coordinates (0–1) and typographic properties. {{briefItems}} is injected at runtime.',
+    variables: [
+      {
+        name: 'briefItems',
+        description: 'JSON array of { id, label, value } from the current TextBrief',
+        example: '[{"id":"abc-123","label":"titulo","value":"PROMOÇÃO"},{"id":"def-456","label":"preco","value":"R$ 19,90"}]',
+      },
+    ],
+    template: DEFAULT_PROMPTS.visionLocateBrief,
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -188,6 +251,7 @@ export function loadPrompts(): PromptsConfig {
         imageGeneration: parsed.imageGeneration ?? DEFAULT_PROMPTS.imageGeneration,
         removeText: parsed.removeText ?? DEFAULT_PROMPTS.removeText,
         visionLayout: parsed.visionLayout ?? DEFAULT_PROMPTS.visionLayout,
+        visionLocateBrief: parsed.visionLocateBrief ?? DEFAULT_PROMPTS.visionLocateBrief,
       };
     }
   } catch {

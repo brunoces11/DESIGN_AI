@@ -9,8 +9,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getJob, updateJob, transitionStatus, getTextBrief, type JobRow } from '@/lib/db';
 import { localStorage } from '@/lib/storage';
 import { regenerateWithoutText } from '@/lib/openai';
-import { extractLayoutVisionWithRetry } from '@/lib/openai/visionRetry';
-import { mergeBriefWithVisionLayout, type VisionResponse } from '@/lib/layout/normalize';
+import { locateBriefInImageWithRetry } from '@/lib/openai/visionRetry';
+import { applyLocatedLayoutToBrief } from '@/lib/layout/normalize';
 
 export async function POST(
   req: NextRequest,
@@ -64,11 +64,19 @@ async function runStage4(id: string, job: JobRow, imageModel: 'gpt-image-1' | 'g
   const approved = await localStorage.readBytes(id, `iterations/${job.current_iteration}.png`);
   await localStorage.saveBytes(id, 'approved.png', approved);
 
-  // Parallel: 4A (Vision) + 4B (clean regen)
-  // Pass the approved image as base, the model, and dimensions so the
-  // clean regen preserves layout, proportions, and negative space exactly.
-  const [rawVision, cleanPng] = await Promise.all([
-    extractLayoutVisionWithRetry(approved, 1),
+  // Load the canonical brief — this is the source of truth for text content
+  const brief = getTextBrief(id) ?? { textItems: [] };
+  const effectiveBriefItems = brief.textItems
+    .filter((t) => t.value.trim().length > 0)
+    .map((t) => ({ id: t.id, label: t.label, value: t.value }));
+
+  // Parallel: 4A (supervised Vision locate) + 4B (clean regen)
+  const [locatedItems, cleanPng] = await Promise.all([
+    // 4A: send the brief to Vision so it locates each known text element by id,
+    // returning normalised coordinates (0–1) and typographic properties.
+    // This replaces the blind extractLayoutVision call and fixes positional misalignment.
+    locateBriefInImageWithRetry(approved, effectiveBriefItems, 1),
+    // 4B: regenerate without text for the clean background
     regenerateWithoutText({
       baseImage: approved,
       originalPrompt: job.initial_prompt,
@@ -78,18 +86,16 @@ async function runStage4(id: string, job: JobRow, imageModel: 'gpt-image-1' | 'g
     }),
   ]);
 
-  await localStorage.saveJson(id, 'vision.json', rawVision);
+  await localStorage.saveJson(id, 'vision.json', locatedItems);
   await localStorage.saveBytes(id, 'clean.png', cleanPng);
 
   const cleanDataUrl = `data:image/png;base64,${cleanPng.toString('base64')}`;
 
-  const rawVisionTyped = rawVision as VisionResponse;
-  const brief = getTextBrief(id) ?? { textItems: [] };
-  const layoutInput = mergeBriefWithVisionLayout({
+  // Build layout: brief provides content (canonical), locatedItems provides
+  // normalised positions and typography (from the actual approved image).
+  const layoutInput = applyLocatedLayoutToBrief({
     brief,
-    visionResponse: rawVisionTyped,
-    imageWidthPx: rawVisionTyped.imageWidthPx,
-    imageHeightPx: rawVisionTyped.imageHeightPx,
+    locatedItems,
     canvasWidthMm: job.width_mm,
     canvasHeightMm: job.height_mm,
     backgroundDataUrl: cleanDataUrl,

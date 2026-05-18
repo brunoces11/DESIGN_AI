@@ -47,6 +47,36 @@ export const VisionResponseSchema = z.object({
 export type VisionResponse = z.infer<typeof VisionResponseSchema>;
 
 // ---------------------------------------------------------------------------
+// Zod schemas (Stage 4A supervised — LocatedItemsResponse)
+// ---------------------------------------------------------------------------
+
+/**
+ * A single located item returned by the supervised Vision call.
+ * All coordinates are normalised (0–1 fractions of image dimensions).
+ * fontSizeRel is the font size as a fraction of the image HEIGHT.
+ */
+export const LocatedItemSchema = z.object({
+  id: z.string().uuid(),
+  bbox: z.object({
+    x: z.number().min(0).max(1),
+    y: z.number().min(0).max(1),
+    width: z.number().min(0).max(1),
+    height: z.number().min(0).max(1),
+  }),
+  fontSizeRel: z.number().min(0).max(1),
+  fontWeight: z.number().int().min(100).max(900),
+  color: z.string().min(1),
+  align: z.enum(['left', 'center', 'right']),
+});
+
+export const LocatedItemsResponseSchema = z.object({
+  items: z.array(LocatedItemSchema),
+});
+
+export type LocatedItem = z.infer<typeof LocatedItemSchema>;
+export type LocatedItemsResponse = z.infer<typeof LocatedItemsResponseSchema>;
+
+// ---------------------------------------------------------------------------
 // Zod schemas (TextBrief)
 // ---------------------------------------------------------------------------
 
@@ -333,6 +363,130 @@ export function mergeBriefWithVisionLayout(args: MergeArgs): LayoutInput {
   });
 
   // (5) Extra vision elements are dropped.
+
+  return {
+    canvas: { widthMm: canvasWidthMm, heightMm: canvasHeightMm },
+    background: { dataUrl: backgroundDataUrl },
+    textElements: elements,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// applyLocatedLayoutToBrief
+// ---------------------------------------------------------------------------
+
+/**
+ * Arguments for `applyLocatedLayoutToBrief`.
+ */
+export interface ApplyLocatedArgs {
+  brief: TextBrief;
+  locatedItems: LocatedItemsResponse;
+  canvasWidthMm: number;
+  canvasHeightMm: number;
+  backgroundDataUrl: string;
+}
+
+/**
+ * Converts a supervised LocatedItemsResponse + TextBrief into a LayoutInput.
+ *
+ * This replaces `mergeBriefWithVisionLayout` in Stage 4 when the brief is known.
+ *
+ * Behaviour:
+ *  1. Filters brief to non-empty items (same as mergeBriefWithVisionLayout).
+ *  2. For each effective brief item, looks up the located item by id.
+ *  3. If found and bbox is non-zero: converts normalised coords to mm and
+ *     derives fontSizePx from fontSizeRel × canvasHeightMm × MM_TO_PX.
+ *  4. If not found or bbox is all-zero (model signalled "not visible"):
+ *     uses default positioning (same defaults as mergeBriefWithVisionLayout).
+ *  5. fontWeight is clamped to nearest multiple of 100 in [100, 900].
+ *
+ * Pure: no I/O, deterministic, locale-independent.
+ *
+ * Fixes: Gap 3 (normalised coords), Gap 4 (match by id), Gap 5 (label canonical),
+ *        Gap 6 (default only for genuinely absent items), Gap 1 (fontSizeRel).
+ */
+export function applyLocatedLayoutToBrief(args: ApplyLocatedArgs): LayoutInput {
+  const { brief, locatedItems, canvasWidthMm, canvasHeightMm, backgroundDataUrl } = args;
+
+  // 96 dpi: 1mm = 3.7795px
+  const MM_TO_PX = 3.7795;
+
+  // Build a lookup map: id → LocatedItem
+  const locatedById = new Map<string, LocatedItem>();
+  for (const item of locatedItems.items) {
+    locatedById.set(item.id, item);
+  }
+
+  // Filter brief to non-empty values
+  const effective = brief.textItems.filter((t) => t.value.trim().length > 0);
+
+  const DEFAULT_HEIGHT_MM = 20;
+  const DEFAULT_GAP_MM = 10;
+  const DEFAULT_FONT_PX = 24;
+  const DEFAULT_WIDTH_MM = canvasWidthMm * 0.8;
+  const stackStartY = canvasHeightMm / 2;
+
+  const elements: TextElement[] = effective.map((b, k) => {
+    const located = locatedById.get(b.id);
+
+    // Determine if the located item has a valid (non-zero) bbox
+    const hasValidBbox =
+      located !== undefined &&
+      (located.bbox.width > 0 || located.bbox.height > 0 || located.bbox.x > 0 || located.bbox.y > 0);
+
+    if (hasValidBbox && located) {
+      // Convert normalised coords → mm
+      const xMm = clamp(located.bbox.x * canvasWidthMm, 0, canvasWidthMm);
+      const yMm = clamp(located.bbox.y * canvasHeightMm, 0, canvasHeightMm);
+      const widthMm = clamp(located.bbox.width * canvasWidthMm, 0, canvasWidthMm - xMm);
+      const heightMm = clamp(located.bbox.height * canvasHeightMm, 0, canvasHeightMm - yMm);
+
+      // fontSizeRel × canvasHeightMm → mm → px
+      const fontSizeMm = located.fontSizeRel * canvasHeightMm;
+      const fontSizePx = clamp(Math.round(fontSizeMm * MM_TO_PX), 8, 500);
+
+      // Clamp fontWeight to nearest multiple of 100 in [100, 900]
+      const fontWeight = clamp(Math.round(located.fontWeight / 100) * 100, 100, 900);
+
+      return {
+        id: b.id,
+        content: b.value,
+        position: { xMm, yMm },
+        size: { widthMm, heightMm },
+        typography: {
+          fontFamily: 'Inter, sans-serif',
+          fontSizePx,
+          fontWeight,
+          color: located.color,
+          align: located.align,
+        },
+      };
+    }
+
+    // Fallback: item not found or all-zero bbox — use default stacked positioning
+    const yMm = clamp(
+      stackStartY + k * (DEFAULT_HEIGHT_MM + DEFAULT_GAP_MM),
+      0,
+      Math.max(0, canvasHeightMm - DEFAULT_HEIGHT_MM),
+    );
+    const widthMm = Math.min(DEFAULT_WIDTH_MM, canvasWidthMm);
+    const xMm = clamp((canvasWidthMm - widthMm) / 2, 0, canvasWidthMm);
+    const heightMm = Math.min(DEFAULT_HEIGHT_MM, canvasHeightMm - yMm);
+
+    return {
+      id: b.id,
+      content: b.value,
+      position: { xMm, yMm },
+      size: { widthMm, heightMm },
+      typography: {
+        fontFamily: 'Inter, sans-serif',
+        fontSizePx: DEFAULT_FONT_PX,
+        fontWeight: 400,
+        color: '#000000',
+        align: 'center',
+      },
+    };
+  });
 
   return {
     canvas: { widthMm: canvasWidthMm, heightMm: canvasHeightMm },

@@ -18,6 +18,11 @@ import type { EditableTextItem } from './layout/types';
 // Image model types
 // ---------------------------------------------------------------------------
 
+/**
+ * Supported image generation models.
+ * gpt-image-2 is the default — it supports size:'auto' which picks the
+ * best aspect ratio for the given canvas dimensions.
+ */
 export type ImageModel = 'gpt-image-1' | 'gpt-image-2';
 
 // ---------------------------------------------------------------------------
@@ -249,5 +254,70 @@ export async function extractLayoutVision(args: { image: Buffer }): Promise<unkn
     return JSON.parse(content) as unknown;
   } catch {
     throw new Error(`extractLayoutVision: failed to parse JSON response: ${content.slice(0, 200)}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// locateBriefInImage
+// ---------------------------------------------------------------------------
+
+/**
+ * Supervised Vision call for Stage 4A.
+ *
+ * Sends the approved image + the known TextBrief items to gpt-4o and asks
+ * the model to locate each item by id, returning normalised coordinates
+ * (0–1 fractions of image dimensions) and typographic properties.
+ *
+ * This replaces the blind `extractLayoutVision` call in Stage 4 and
+ * eliminates the index-based match that caused positional misalignment.
+ *
+ * Returns the raw (unvalidated) JSON response — validation is done in
+ * lib/openai/visionRetry.ts via LocatedItemsResponseSchema.
+ *
+ * Requirements: Stage 4A supervised; Gaps 3, 4, 5, 6 fix.
+ */
+export async function locateBriefInImage(args: {
+  image: Buffer;
+  briefItems: Array<{ id: string; label: string; value: string }>;
+}): Promise<unknown> {
+  const client = getClient();
+  const prompts = loadPrompts();
+
+  const briefJson = JSON.stringify(args.briefItems, null, 2);
+  const promptText = interpolate(prompts.visionLocateBrief, { briefItems: briefJson });
+
+  const base64Image = args.image.toString('base64');
+  const dataUrl = `data:image/png;base64,${base64Image}`;
+
+  const response = await client.chat.completions.create({
+    model: 'gpt-4o',
+    messages: [
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'image_url',
+            image_url: { url: dataUrl, detail: 'high' },
+          },
+          {
+            type: 'text',
+            text: promptText,
+          },
+        ],
+      },
+    ],
+    response_format: { type: 'json_object' },
+    max_tokens: 4096,
+  });
+
+  const content = response.choices[0]?.message?.content;
+  if (!content) {
+    throw new Error('locateBriefInImage: empty response from API');
+  }
+
+  try {
+    return JSON.parse(content) as unknown;
+  } catch {
+    throw new Error(`locateBriefInImage: failed to parse JSON response: ${content.slice(0, 200)}`);
   }
 }

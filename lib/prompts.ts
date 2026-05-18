@@ -48,25 +48,31 @@ export interface PromptsConfig {
 
 export const DEFAULT_PROMPTS: PromptsConfig = {
   /**
-   * Stage 1 & 3 — Image generation (gpt-image-1)
+   * Stage 1 & 3 — Image generation (gpt-image-2)
    * The user's prompt IS the full prompt — no system wrapper by default.
-   * This template wraps it with optional context.
+   * This template wraps it with mandatory aspect ratio and text instructions.
    * {{userPrompt}} — the text typed by the user in the form
-   * {{widthMm}} / {{heightMm}} — physical dimensions of the print piece
+   * {{widthMm}} / {{heightMm}} — physical dimensions of the print piece (millimetres)
+   * {{aspectRatio}} — pre-formatted aspect ratio string (e.g. "9:2 (decimal 4.50, landscape, very wide panoramic)")
    */
   imageGeneration: `{{userPrompt}}
 
-Physical dimensions: {{widthMm}}mm × {{heightMm}}mm. Generate a high-quality image suitable for large-format printing at these dimensions.
+MANDATORY ASPECT RATIO: The image MUST be composed for an aspect ratio of {{aspectRatio}}.
+Physical print dimensions: {{widthMm}}mm × {{heightMm}}mm.
+Compose the entire scene to fit this aspect ratio precisely. Do NOT crop, letterbox, or pad. The whole canvas must be filled with intentional content matching the requested orientation.
 
 {{textInstructions}}`,
 
   /**
-   * Stage 4B — Regenerate without text (gpt-image-1 or gpt-image-2)
+   * Stage 4B — Regenerate without text (gpt-image-2)
    * The approved image is sent as the base. The goal is pixel-perfect
    * preservation of everything except the text elements.
    * {{originalPrompt}} — the initial prompt from Stage 1
+   * {{aspectRatio}} — pre-formatted aspect ratio string of the canvas
    */
   removeText: `You are given an image. Your task is to reproduce this image IDENTICALLY, with ONE single change: remove all text, letters, numbers, words, and typographic elements.
+
+MANDATORY ASPECT RATIO: The output image MUST keep an aspect ratio of {{aspectRatio}}.
 
 CRITICAL RULES — follow every one without exception:
 1. Preserve the EXACT same composition, layout, and spatial arrangement of all visual elements.
@@ -171,7 +177,7 @@ export const PROMPT_DEFINITIONS: PromptDefinition[] = [
     id: 'imageGeneration',
     label: 'Image Generation',
     description:
-      'Sent to gpt-image-1 during Stage 1 (initial generation) and Stage 3 (refinement iterations). The user\'s prompt is injected via {{userPrompt}}.',
+      'Sent to gpt-image-2 during Stage 1 (initial generation) and Stage 3 (refinement iterations). The user\'s prompt is injected via {{userPrompt}}, and the canvas aspect ratio is injected via {{aspectRatio}}.',
     variables: [
       {
         name: 'userPrompt',
@@ -189,6 +195,11 @@ export const PROMPT_DEFINITIONS: PromptDefinition[] = [
         example: '500',
       },
       {
+        name: 'aspectRatio',
+        description: 'Pre-formatted aspect ratio string (simplified fraction + decimal + orientation hint), computed from widthMm/heightMm',
+        example: '9:2 (decimal 4.50, landscape, very wide panoramic)',
+      },
+      {
         name: 'textInstructions',
         description:
           'Bloco de instruções textuais geradas a partir do TextBrief; lista cada item ou instrui a ausência total de texto',
@@ -201,12 +212,17 @@ export const PROMPT_DEFINITIONS: PromptDefinition[] = [
     id: 'removeText',
     label: 'Remove Text (Stage 4B)',
     description:
-      'Sent to gpt-image-1 to regenerate the approved image without any text. The original prompt is injected as scene context via {{originalPrompt}}.',
+      'Sent to gpt-image-2 to regenerate the approved image without any text. The original prompt is injected as scene context via {{originalPrompt}}, and the canvas aspect ratio is injected via {{aspectRatio}}.',
     variables: [
       {
         name: 'originalPrompt',
         description: 'The initial prompt from Stage 1, used as scene context',
         example: 'A vibrant banner for a coffee shop with warm colors',
+      },
+      {
+        name: 'aspectRatio',
+        description: 'Pre-formatted aspect ratio string of the canvas',
+        example: '9:2 (decimal 4.50, landscape, very wide panoramic)',
       },
     ],
     template: DEFAULT_PROMPTS.removeText,
@@ -281,6 +297,55 @@ export function savePrompts(config: PromptsConfig): void {
  */
 export function interpolate(template: string, vars: Record<string, string>): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_, key: string) => vars[key] ?? `{{${key}}}`);
+}
+
+// ---------------------------------------------------------------------------
+// Aspect ratio formatter
+// ---------------------------------------------------------------------------
+
+/**
+ * Greatest common divisor — used to simplify aspect ratio fractions.
+ * Pure, iterative implementation.
+ */
+function gcd(a: number, b: number): number {
+  let x = Math.abs(Math.round(a));
+  let y = Math.abs(Math.round(b));
+  while (y > 0) {
+    [x, y] = [y, x % y];
+  }
+  return x || 1;
+}
+
+/**
+ * Formats canvas dimensions as a human-readable aspect ratio string
+ * suitable for embedding in an image-generation prompt.
+ *
+ * Returns a multi-part description:
+ *   "<w>:<h> (decimal <r>, orientation <portrait|landscape|square>)"
+ *
+ * Examples:
+ *   formatAspectRatio(900, 200)  → "9:2 (decimal 4.50, landscape, very wide panoramic)"
+ *   formatAspectRatio(300, 500)  → "3:5 (decimal 0.60, portrait)"
+ *   formatAspectRatio(1024, 1024) → "1:1 (decimal 1.00, square)"
+ *
+ * Pure, deterministic, no I/O.
+ */
+export function formatAspectRatio(widthMm: number, heightMm: number): string {
+  const w = Math.max(1, Math.round(widthMm));
+  const h = Math.max(1, Math.round(heightMm));
+  const g = gcd(w, h);
+  const wRatio = w / g;
+  const hRatio = h / g;
+  const decimal = w / h;
+
+  let orientation: string;
+  if (decimal > 2.5) orientation = 'landscape, very wide panoramic';
+  else if (decimal > 1.15) orientation = 'landscape';
+  else if (decimal < 0.4) orientation = 'portrait, very tall vertical';
+  else if (decimal < 0.87) orientation = 'portrait';
+  else orientation = 'square';
+
+  return `${wRatio}:${hRatio} (decimal ${decimal.toFixed(2)}, ${orientation})`;
 }
 
 // ---------------------------------------------------------------------------

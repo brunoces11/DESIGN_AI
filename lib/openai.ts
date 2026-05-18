@@ -25,7 +25,7 @@
  */
 
 import OpenAI from 'openai';
-import { loadPrompts, interpolate, formatTextInstructions } from './prompts';
+import { loadPrompts, interpolate, formatTextInstructions, formatAspectRatio } from './prompts';
 import type { EditableTextItem } from './layout/types';
 
 // ---------------------------------------------------------------------------
@@ -103,6 +103,7 @@ export async function generateImageToImage(args: {
     userPrompt: args.prompt,
     widthMm: String(args.widthMm ?? ''),
     heightMm: String(args.heightMm ?? ''),
+    aspectRatio: formatAspectRatio(args.widthMm ?? 1, args.heightMm ?? 1),
     textInstructions: formatTextInstructions(args.textItems ?? []),
   });
 
@@ -158,6 +159,7 @@ export async function regenerateWithoutText(args: {
 
   const finalPrompt = interpolate(prompts.removeText, {
     originalPrompt: args.originalPrompt,
+    aspectRatio: formatAspectRatio(args.widthMm ?? 1, args.heightMm ?? 1),
   });
 
   const size = pickSize(args.widthMm ?? 1, args.heightMm ?? 1);

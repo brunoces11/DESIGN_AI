@@ -810,10 +810,13 @@ export default function Home() {
                     display: 'block',
                     maxWidth: '100%',
                     maxHeight: '100%',
-                    aspectRatio: `${state.widthMm} / ${state.heightMm}`,
-                    width: '100%',
-                    height: '100%',
-                    objectFit: 'contain',
+                    width: `${iframeW}px`,
+                    height: `${iframeH}px`,
+                    transform: `scale(${Math.min(
+                      (window.innerWidth - 32) / iframeW,
+                      (window.innerHeight - 80) / iframeH
+                    )})`,
+                    transformOrigin: 'center center',
                   }}
                   title="Layout Preview Fullscreen"
                 />

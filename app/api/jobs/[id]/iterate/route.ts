@@ -9,7 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getJob, updateJob, transitionStatus, setTextBrief } from '@/lib/db';
 import { localStorage } from '@/lib/storage';
-import { generateImageToImage, type ImageModel } from '@/lib/openai';
+import { generateImageToImage } from '@/lib/openai';
 import type { EditableTextItem } from '@/lib/layout/types';
 
 // ---------------------------------------------------------------------------
@@ -71,10 +71,7 @@ export async function POST(
       return NextResponse.json({ error: 'textItems must be valid JSON' }, { status: 400 });
     }
 
-    // Optional imageModel
-    const imageModelRaw = formData.get('imageModel');
-    const imageModel: ImageModel =
-      imageModelRaw === 'gpt-image-2' ? 'gpt-image-2' : 'gpt-image-1';
+    // Optional imageModel param is ignored — model is fixed to gpt-image-2
 
     // Persist brief BEFORE generation (Req 6.3)
     await setTextBrief(id, { textItems: parsedItems });
@@ -99,7 +96,6 @@ export async function POST(
       widthMm: job.width_mm,
       heightMm: job.height_mm,
       textItems: effective,
-      imageModel,
     });
     await localStorage.saveBytes(id, `iterations/${next}.png`, generated);
     updateJob(id, { current_iteration: next });

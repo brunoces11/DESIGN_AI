@@ -7,23 +7,26 @@
  *
  * Prompts are loaded from lib/prompts.ts (editable via the Settings UI).
  *
+ * Model: gpt-image-2 exclusively.
+ *
+ * The gpt-image-2 images.edit API accepts only these fixed sizes:
+ *   '1024x1024'  (square,    ratio 1.00)
+ *   '1536x1024'  (landscape, ratio 1.50)
+ *   '1024x1536'  (portrait,  ratio 0.67)
+ *   'auto'       (model picks — equivalent to the closest of the above)
+ *
+ * Custom pixel dimensions are NOT supported by the API. We pick the fixed
+ * size whose aspect ratio is closest to the canvas dimensions (widthMm/heightMm)
+ * to minimise distortion. The HTML/CSS render layer stretches the background
+ * to fill the exact canvas via object-fit:fill, so the PDF always comes out
+ * at the correct physical dimensions regardless of which size was chosen.
+ *
  * Requirements: 9.1–9.4
  */
 
 import OpenAI from 'openai';
 import { loadPrompts, interpolate, formatTextInstructions } from './prompts';
 import type { EditableTextItem } from './layout/types';
-
-// ---------------------------------------------------------------------------
-// Image model types
-// ---------------------------------------------------------------------------
-
-/**
- * Supported image generation models.
- * gpt-image-2 is the default — it supports size:'auto' which picks the
- * best aspect ratio for the given canvas dimensions.
- */
-export type ImageModel = 'gpt-image-1' | 'gpt-image-2';
 
 // ---------------------------------------------------------------------------
 // Singleton client
@@ -47,13 +50,42 @@ function getClient(): OpenAI {
 }
 
 // ---------------------------------------------------------------------------
+// Size selection helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Picks the gpt-image-2 fixed size whose aspect ratio is closest to the
+ * given canvas dimensions.
+ *
+ * Supported sizes and their ratios (w/h):
+ *   1024x1024  → 1.000  (square)
+ *   1536x1024  → 1.500  (landscape)
+ *   1024x1536  → 0.667  (portrait)
+ *
+ * Selection boundaries (midpoints between adjacent ratios):
+ *   ratio > 1.25  → landscape  (midpoint between 1.00 and 1.50)
+ *   ratio < 0.833 → portrait   (midpoint between 0.67 and 1.00)
+ *   otherwise     → square
+ */
+function pickSize(widthMm: number, heightMm: number): '1024x1024' | '1536x1024' | '1024x1536' {
+  const ratio = widthMm / Math.max(heightMm, 1);
+  if (ratio > 1.25) return '1536x1024';
+  if (ratio < 0.833) return '1024x1536';
+  return '1024x1024';
+}
+
+// ---------------------------------------------------------------------------
 // generateImageToImage
 // ---------------------------------------------------------------------------
 
 /**
- * Generates an image from an existing image + prompt using gpt-image-1.
+ * Generates an image from an existing image + prompt using gpt-image-2.
  * The prompt template is loaded from the prompts store and interpolated
- * with the user's prompt and print dimensions.
+ * with the user's prompt, print dimensions, and text instructions.
+ *
+ * The size parameter is derived from widthMm/heightMm to pick the closest
+ * supported fixed size — this is the best approximation possible given the
+ * API's fixed-size constraint.
  *
  * Requirements: 2.2, 3.1
  */
@@ -63,11 +95,9 @@ export async function generateImageToImage(args: {
   widthMm?: number;
   heightMm?: number;
   textItems?: EditableTextItem[];
-  imageModel?: ImageModel;
 }): Promise<Buffer> {
   const client = getClient();
   const prompts = loadPrompts();
-  const model: ImageModel = args.imageModel ?? 'gpt-image-1';
 
   const finalPrompt = interpolate(prompts.imageGeneration, {
     userPrompt: args.prompt,
@@ -76,39 +106,17 @@ export async function generateImageToImage(args: {
     textInstructions: formatTextInstructions(args.textItems ?? []),
   });
 
+  const size = pickSize(args.widthMm ?? 1, args.heightMm ?? 1);
   const imageFile = new File([args.baseImage], 'image.jpg', { type: 'image/jpeg' });
 
-  let response: Awaited<ReturnType<typeof client.images.edit>>;
-
-  if (model === 'gpt-image-2') {
-    // gpt-image-2: use size:'auto' so the model picks the best aspect ratio,
-    // plus quality:'high' for best output. The 'auto' size is the closest
-    // available option to custom dimensions on this model.
-    response = await client.images.edit({
-      model: 'gpt-image-2',
-      image: imageFile,
-      prompt: finalPrompt,
-      n: 1,
-      size: 'auto',
-      quality: 'high',
-    } as Parameters<typeof client.images.edit>[0]);
-  } else {
-    // gpt-image-1: pick the closest supported fixed size based on physical dimensions.
-    // Supported: '1024x1024' (square), '1536x1024' (landscape), '1024x1536' (portrait).
-    const w = args.widthMm ?? 1;
-    const h = args.heightMm ?? 1;
-    const ratio = w / h;
-    const size: '1024x1024' | '1536x1024' | '1024x1536' =
-      ratio > 1.2 ? '1536x1024' : ratio < 0.833 ? '1024x1536' : '1024x1024';
-
-    response = await client.images.edit({
-      model: 'gpt-image-1',
-      image: imageFile,
-      prompt: finalPrompt,
-      n: 1,
-      size,
-    });
-  }
+  const response = await client.images.edit({
+    model: 'gpt-image-2',
+    image: imageFile,
+    prompt: finalPrompt,
+    n: 1,
+    size,
+    quality: 'high',
+  } as Parameters<typeof client.images.edit>[0]);
 
   const imageData = response.data?.[0];
   if (!imageData) {
@@ -133,7 +141,7 @@ export async function generateImageToImage(args: {
 // ---------------------------------------------------------------------------
 
 /**
- * Regenerates an image without any text using gpt-image-1 or gpt-image-2.
+ * Regenerates an image without any text using gpt-image-2.
  * Sends the approved image as the base so the model can preserve layout exactly.
  * Uses the removeText prompt template from the prompts store.
  *
@@ -144,47 +152,27 @@ export async function regenerateWithoutText(args: {
   originalPrompt: string;
   widthMm?: number;
   heightMm?: number;
-  imageModel?: ImageModel;
 }): Promise<Buffer> {
   const client = getClient();
   const prompts = loadPrompts();
-  const model: ImageModel = args.imageModel ?? 'gpt-image-1';
 
   const finalPrompt = interpolate(prompts.removeText, {
     originalPrompt: args.originalPrompt,
   });
 
-  // Always send the approved image as the base so the model can see
-  // exactly what to preserve. Use PNG to avoid JPEG compression artifacts.
+  const size = pickSize(args.widthMm ?? 1, args.heightMm ?? 1);
+
+  // Use PNG to avoid JPEG compression artifacts on the approved image.
   const imageFile = new File([args.baseImage], 'approved.png', { type: 'image/png' });
 
-  let response: Awaited<ReturnType<typeof client.images.edit>>;
-
-  if (model === 'gpt-image-2') {
-    response = await client.images.edit({
-      model: 'gpt-image-2',
-      image: imageFile,
-      prompt: finalPrompt,
-      n: 1,
-      size: 'auto',
-      quality: 'high',
-    } as Parameters<typeof client.images.edit>[0]);
-  } else {
-    // gpt-image-1: match the same aspect ratio used during generation
-    const w = args.widthMm ?? 1;
-    const h = args.heightMm ?? 1;
-    const ratio = w / h;
-    const size: '1024x1024' | '1536x1024' | '1024x1536' =
-      ratio > 1.2 ? '1536x1024' : ratio < 0.833 ? '1024x1536' : '1024x1024';
-
-    response = await client.images.edit({
-      model: 'gpt-image-1',
-      image: imageFile,
-      prompt: finalPrompt,
-      n: 1,
-      size,
-    });
-  }
+  const response = await client.images.edit({
+    model: 'gpt-image-2',
+    image: imageFile,
+    prompt: finalPrompt,
+    n: 1,
+    size,
+    quality: 'high',
+  } as Parameters<typeof client.images.edit>[0]);
 
   const imageData = response.data?.[0];
   if (!imageData) {
@@ -267,12 +255,6 @@ export async function extractLayoutVision(args: { image: Buffer }): Promise<unkn
  * Sends the approved image + the known TextBrief items to gpt-4o and asks
  * the model to locate each item by id, returning normalised coordinates
  * (0–1 fractions of image dimensions) and typographic properties.
- *
- * This replaces the blind `extractLayoutVision` call in Stage 4 and
- * eliminates the index-based match that caused positional misalignment.
- *
- * Returns the raw (unvalidated) JSON response — validation is done in
- * lib/openai/visionRetry.ts via LocatedItemsResponseSchema.
  *
  * Requirements: Stage 4A supervised; Gaps 3, 4, 5, 6 fix.
  */

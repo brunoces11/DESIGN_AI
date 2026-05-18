@@ -18,10 +18,7 @@ export async function POST(
 ): Promise<NextResponse> {
   const { id } = params;
 
-  // Read the image model preference from the request header (optional, defaults to gpt-image-1)
-  const imageModelHeader = req.headers.get('x-image-model');
-  const imageModel: 'gpt-image-1' | 'gpt-image-2' =
-    imageModelHeader === 'gpt-image-2' ? 'gpt-image-2' : 'gpt-image-1';
+  // imageModel header is ignored — model is fixed to gpt-image-2
 
   const job = getJob(id);
   if (!job) {
@@ -46,7 +43,7 @@ export async function POST(
   }
 
   // Fire-and-forget Stage 4 — respond 202 immediately
-  void runStage4(id, job, imageModel).catch((err: unknown) => {
+  void runStage4(id, job).catch((err: unknown) => {
     try {
       updateJob(id, { error_message: String(err) });
       transitionStatus(id, ['processing_step4'], 'error');
@@ -59,7 +56,7 @@ export async function POST(
   return NextResponse.json({ status: 'processing_step4' }, { status: 202 });
 }
 
-async function runStage4(id: string, job: JobRow, imageModel: 'gpt-image-1' | 'gpt-image-2'): Promise<void> {
+async function runStage4(id: string, job: JobRow): Promise<void> {
   // Copy approved iteration
   const approved = await localStorage.readBytes(id, `iterations/${job.current_iteration}.png`);
   await localStorage.saveBytes(id, 'approved.png', approved);
@@ -82,7 +79,6 @@ async function runStage4(id: string, job: JobRow, imageModel: 'gpt-image-1' | 'g
       originalPrompt: job.initial_prompt,
       widthMm: job.width_mm,
       heightMm: job.height_mm,
-      imageModel,
     }),
   ]);
 

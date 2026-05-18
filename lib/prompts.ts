@@ -130,7 +130,9 @@ For each element in the list above, return its location and styling.
 All coordinates must be NORMALISED fractions of the image dimensions (values between 0.0 and 1.0):
   - x, y: top-left corner of the bounding box (0,0 = top-left of image)
   - width, height: size of the bounding box
-  - fontSizeRel: visual font size as a fraction of the image HEIGHT (e.g. 0.05 means the font is 5% of the image height)
+  - fontSizeRel: the visual font size expressed as a fraction of the TOTAL IMAGE HEIGHT.
+    Examples: a large title that is ~8% of the image height → 0.08; a small caption ~2% → 0.02; a medium subtitle ~5% → 0.05.
+    Typical range: 0.02 (small) to 0.15 (very large headline). Never return 0 for visible text.
 
 Return ONLY a valid JSON object — no markdown, no explanation:
 
@@ -144,7 +146,7 @@ Return ONLY a valid JSON object — no markdown, no explanation:
         "width": <0.0–1.0>,
         "height": <0.0–1.0>
       },
-      "fontSizeRel": <0.0–1.0>,
+      "fontSizeRel": <0.02–0.15 typical range, fraction of image height>,
       "fontWeight": <integer multiple of 100 between 100 and 900>,
       "color": "<CSS color string, e.g. '#FFFFFF'>",
       "align": "<'left' | 'center' | 'right'>"
@@ -156,7 +158,8 @@ Rules:
 - Return exactly one entry per input element, in the same order.
 - If a text element is not visible in the image, still return its id but set all numeric fields to 0 and color to '#000000'.
 - Do NOT invent new ids. Do NOT omit any id from the input list.
-- fontWeight must be a multiple of 100 (100, 200, … 900).`,
+- fontWeight must be a multiple of 100 (100, 200, … 900).
+- fontSizeRel must reflect the VISUAL SIZE DIFFERENCE between elements: a title must have a larger fontSizeRel than a subtitle, which must be larger than body text.`,
 };
 
 // ---------------------------------------------------------------------------

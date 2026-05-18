@@ -275,6 +275,42 @@ export default function Home() {
   const [showSettings, setShowSettings] = useState(false);
   const [imageModel, setImageModel] = useState<ImageModel>('gpt-image-2');
 
+  // ---------------------------------------------------------------------------
+  // History — for back/forward navigation between visited steps (no API calls)
+  // ---------------------------------------------------------------------------
+  const [history, setHistory] = useState<AppState[]>([{ step: 'text_setup' }]);
+  const [historyIndex, setHistoryIndex] = useState(0);
+
+  // Push a new state into history and advance the pointer.
+  // Truncates any forward history when a new branch is taken.
+  const pushState = (next: AppState) => {
+    setHistory(prev => {
+      const truncated = prev.slice(0, historyIndex + 1);
+      return [...truncated, next];
+    });
+    setHistoryIndex(prev => prev + 1);
+    setState(next);
+  };
+
+  const canGoBack = historyIndex > 0;
+  const canGoForward = historyIndex < history.length - 1;
+
+  const goBack = () => {
+    if (!canGoBack) return;
+    const prev = history[historyIndex - 1]!;
+    setHistoryIndex(i => i - 1);
+    setState(prev);
+    setError(null);
+  };
+
+  const goForward = () => {
+    if (!canGoForward) return;
+    const next = history[historyIndex + 1]!;
+    setHistoryIndex(i => i + 1);
+    setState(next);
+    setError(null);
+  };
+
   // Shared form state (Task 7.1 — hoisted to top-level)
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [widthMm, setWidthMm] = useState('');
@@ -286,9 +322,10 @@ export default function Home() {
   const [iteratePrompt, setIteratePrompt] = useState('');
   const [iterateImage, setIterateImage] = useState<File | null>(null);
 
-  // Preview scale
+  // Preview scale + fullscreen
   const previewContainerRef = useRef<HTMLDivElement>(null);
   const [previewScale, setPreviewScale] = useState(1);
+  const [previewFullscreen, setPreviewFullscreen] = useState(false);
 
   // ---------------------------------------------------------------------------
   // Polling
@@ -314,10 +351,23 @@ export default function Home() {
         if (data.status === 'preview_ready') {
           setState((prev) => {
             if (prev.step !== 'awaiting_preview') return prev;
-            return { step: 'preview', jobId: prev.jobId, widthMm: prev.widthMm, heightMm: prev.heightMm };
+            const next: AppState = { step: 'preview', jobId: prev.jobId, widthMm: prev.widthMm, heightMm: prev.heightMm };
+            // Push to history when transitioning to preview
+            setHistory(h => {
+              const truncated = h.slice(0, historyIndex + 1);
+              return [...truncated, next];
+            });
+            setHistoryIndex(i => i + 1);
+            return next;
           });
         } else if (data.status === 'pdf_ready') {
-          setState({ step: 'done', jobId });
+          const next: AppState = { step: 'done', jobId };
+          setHistory(h => {
+            const truncated = h.slice(0, historyIndex + 1);
+            return [...truncated, next];
+          });
+          setHistoryIndex(i => i + 1);
+          setState(next);
         } else if (data.status === 'error') {
           setState({ step: 'error', errorMessage: data.errorMessage ?? 'Unknown error' });
         }
@@ -383,7 +433,7 @@ export default function Home() {
       const data = (await res.json()) as { jobId?: string; status?: string; textItems?: EditableTextItem[]; warning?: string; error?: string };
       if (!res.ok || !data.jobId) { setError(data.error ?? 'Analysis failed'); return; }
       setTextItems(data.textItems ?? []);
-      setState({ step: 'text_review', jobId: data.jobId, widthMm: wMm, heightMm: hMm, warning: data.warning as 'vision_unavailable' | undefined });
+      pushState({ step: 'text_review', jobId: data.jobId, widthMm: wMm, heightMm: hMm, warning: data.warning as 'vision_unavailable' | undefined });
     } catch (err) { setError(String(err)); }
     finally { setLoading(false); }
   };
@@ -423,7 +473,7 @@ export default function Home() {
       if (!res.ok || !data.jobId) { setError(data.error ?? 'Failed to create job'); return; }
       // Copy the setup prompt into iteratePrompt so it's visible on the iterating screen
       setIteratePrompt(prompt);
-      setState({ step: 'iterating', jobId: data.jobId, currentIteration: data.iteration!, widthMm: wMm, heightMm: hMm });
+      pushState({ step: 'iterating', jobId: data.jobId, currentIteration: data.iteration!, widthMm: wMm, heightMm: hMm });
     } catch (err) { setError(String(err)); }
     finally { setLoading(false); }
   };
@@ -449,7 +499,9 @@ export default function Home() {
       const res = await fetch(`/api/jobs/${state.jobId}/iterate`, { method: 'POST', body: fd });
       const data = (await res.json()) as { iteration?: number; error?: string };
       if (!res.ok || data.iteration == null) { setError(data.error ?? 'Iteration failed'); return; }
+      // Update current iteration in place — not a new history entry (same step, just new iteration number)
       setState(prev => prev.step !== 'iterating' ? prev : { ...prev, currentIteration: data.iteration! });
+      setHistory(prev => prev.map((s, i) => i === historyIndex && s.step === 'iterating' ? { ...s, currentIteration: data.iteration! } : s));
       setIteratePrompt(''); setIterateImage(null);
     } catch (err) { setError(String(err)); }
     finally { setLoading(false); }
@@ -469,9 +521,18 @@ export default function Home() {
       });
       const data = (await res.json()) as { status?: string; error?: string };
       if (!res.ok && res.status !== 202) { setError(data.error ?? 'Approval failed'); return; }
-      setState((prev) => prev.step !== 'iterating' ? prev : {
-        step: 'awaiting_preview', jobId: prev.jobId,
-        currentIteration: prev.currentIteration, widthMm: prev.widthMm, heightMm: prev.heightMm,
+      setState((prev) => {
+        if (prev.step !== 'iterating') return prev;
+        const next: AppState = {
+          step: 'awaiting_preview', jobId: prev.jobId,
+          currentIteration: prev.currentIteration, widthMm: prev.widthMm, heightMm: prev.heightMm,
+        };
+        setHistory(h => {
+          const truncated = h.slice(0, historyIndex + 1);
+          return [...truncated, next];
+        });
+        setHistoryIndex(i => i + 1);
+        return next;
       });
     } catch (err) { setError(String(err)); }
     finally { setLoading(false); }
@@ -485,7 +546,7 @@ export default function Home() {
       const data = (await res.json()) as { pdfPath?: string; status?: string; error?: string };
       if (!res.ok && res.status !== 202) { setError(data.error ?? 'PDF rendering failed'); return; }
       if (data.pdfPath) {
-        setState({ step: 'done', jobId: state.jobId });
+        pushState({ step: 'done', jobId: state.jobId });
       } else {
         setState((prev) => prev.step !== 'preview' ? prev : {
           step: 'rendering_pdf', jobId: prev.jobId, widthMm: prev.widthMm, heightMm: prev.heightMm,
@@ -751,9 +812,57 @@ export default function Home() {
                 onLoad={computeScale} title="Layout Preview" />
             </div>
           </div>
+          <button
+            style={{ ...S.btnSecondary, marginBottom: 0 }}
+            onClick={() => setPreviewFullscreen(true)}
+          >
+            🔍 Expandir Preview
+          </button>
           <button style={S.btn} onClick={() => { void handleRenderPdf(); }} disabled={loading}>
             {loading ? 'Gerando PDF…' : 'Aprovar & Gerar PDF'}
           </button>
+          {/* Fullscreen overlay */}
+          {previewFullscreen && (
+            <div style={{
+              position: 'fixed', inset: 0, zIndex: 1000,
+              background: '#000',
+              display: 'flex', flexDirection: 'column',
+            }}>
+              <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '10px 16px', background: '#111', flexShrink: 0,
+              }}>
+                <span style={{ color: '#fff', fontWeight: 600, fontSize: 14 }}>
+                  Preview — {state.widthMm}×{state.heightMm}mm
+                </span>
+                <button
+                  onClick={() => setPreviewFullscreen(false)}
+                  style={{
+                    background: 'none', border: '1px solid #555', borderRadius: 6,
+                    color: '#fff', cursor: 'pointer', padding: '4px 12px', fontSize: 13,
+                  }}
+                >
+                  ✕ Fechar
+                </button>
+              </div>
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', padding: 16 }}>
+                <iframe
+                  src={`/api/jobs/${state.jobId}/preview-html`}
+                  style={{
+                    border: 'none',
+                    display: 'block',
+                    maxWidth: '100%',
+                    maxHeight: '100%',
+                    aspectRatio: `${state.widthMm} / ${state.heightMm}`,
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'contain',
+                  }}
+                  title="Layout Preview Fullscreen"
+                />
+              </div>
+            </div>
+          )}
         </div>
       );
     }
@@ -783,7 +892,10 @@ export default function Home() {
         </a>
         <button style={S.btnSecondary} onClick={() => {
           // Reset to text_setup (not idle) — Task 7.1 / IMPORTANT note
-          setState({ step: 'text_setup' });
+          const initial: AppState = { step: 'text_setup' };
+          setState(initial);
+          setHistory([initial]);
+          setHistoryIndex(0);
           setImageFile(null);
           setWidthMm('');
           setHeightMm('');
@@ -803,7 +915,12 @@ export default function Home() {
           <h2 style={{ ...S.title, textAlign: 'center' }}>Algo deu errado</h2>
         </div>
         <div style={S.error}>{state.errorMessage}</div>
-        <button style={S.btnDanger} onClick={() => setState({ step: 'text_setup' })}>
+        <button style={S.btnDanger} onClick={() => {
+          const initial: AppState = { step: 'text_setup' };
+          setState(initial);
+          setHistory([initial]);
+          setHistoryIndex(0);
+        }}>
           Recomeçar
         </button>
       </div>
@@ -816,6 +933,22 @@ export default function Home() {
   // Root render
   // ---------------------------------------------------------------------------
 
+  // Step label for the navigation bar
+  const stepLabel: Record<AppState['step'], string> = {
+    text_setup: 'Nova Arte',
+    text_review: 'Revisar Textos',
+    iterating: 'Refinar Arte',
+    awaiting_preview: 'Processando…',
+    preview: 'Preview',
+    rendering_pdf: 'Gerando PDF…',
+    done: 'Concluído',
+    error: 'Erro',
+  };
+
+  // Steps that are "transient" — back/forward is allowed but shown dimmed
+  const transientSteps: AppState['step'][] = ['awaiting_preview', 'rendering_pdf'];
+  const isTransient = transientSteps.includes(state.step);
+
   return (
     <div style={S.page}>
       <TopBar
@@ -823,6 +956,45 @@ export default function Home() {
         imageModel={imageModel}
         onImageModelChange={setImageModel}
       />
+      {/* Navigation bar — only shown when there is history to navigate */}
+      {history.length > 1 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          padding: '8px 16px',
+          background: '#f1f5f9',
+          borderBottom: '1px solid #e2e8f0',
+          fontSize: 13,
+        }}>
+          <button
+            onClick={goBack}
+            disabled={!canGoBack}
+            title="Etapa anterior"
+            style={{
+              background: 'none', border: '1px solid #cbd5e1', borderRadius: 6,
+              cursor: canGoBack ? 'pointer' : 'not-allowed',
+              padding: '3px 10px', fontSize: 14, color: canGoBack ? '#374151' : '#cbd5e1',
+            }}
+          >
+            ← Voltar
+          </button>
+          <span style={{ flex: 1, textAlign: 'center', color: isTransient ? '#94a3b8' : '#374151', fontWeight: 600 }}>
+            {stepLabel[state.step]}
+            {state.step === 'iterating' ? ` (iteração ${state.currentIteration})` : ''}
+          </span>
+          <button
+            onClick={goForward}
+            disabled={!canGoForward}
+            title="Próxima etapa"
+            style={{
+              background: 'none', border: '1px solid #cbd5e1', borderRadius: 6,
+              cursor: canGoForward ? 'pointer' : 'not-allowed',
+              padding: '3px 10px', fontSize: 14, color: canGoForward ? '#374151' : '#cbd5e1',
+            }}
+          >
+            Avançar →
+          </button>
+        </div>
+      )}
       {renderStep()}
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
     </div>
